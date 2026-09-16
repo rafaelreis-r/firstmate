@@ -2068,8 +2068,10 @@ pr_poll_publish_release() {
 
 watcher_cleanup() {
   local cleanup_status=0 owns_lock=0 transition=release-lock
-  pr_poll_publish_release || cleanup_status=1
-  pr_poll_control_release || cleanup_status=1
+  pr_poll_publish_release \
+    || { echo "watcher: FAILED - PR poll publish lock could not be released during cleanup" >&2; cleanup_status=1; }
+  pr_poll_control_release \
+    || { echo "watcher: FAILED - PR poll control lock could not be released during cleanup" >&2; cleanup_status=1; }
   if [ "$(cat "$WATCH_LOCK/pid" 2>/dev/null || true)" = "${WATCHER_PID:-}" ]; then
     owns_lock=1
     if [ "${WATCHER_RECOVERY_PENDING:-0}" -eq 1 ] \
@@ -2077,12 +2079,13 @@ watcher_cleanup() {
       transition=release-lock-existing
     fi
   fi
-  fm_active_check_stop || cleanup_status=1
+  fm_active_check_stop \
+    || { echo "watcher: FAILED - the active state check could not be stopped during cleanup" >&2; cleanup_status=1; }
   fm_check_output_cleanup
   fm_custom_check_snapshot_cleanup
   if [ "$owns_lock" -eq 1 ] \
     && ! fm_recovery_transition "$WATCHER_DOWNTIME_MARKER" "$transition" "$WATCH_LOCK" downtime; then
-    echo "watcher: recovery state could not be persisted; retaining stale lock evidence" >&2
+    echo "watcher: FAILED - recovery state could not be persisted; retaining stale lock evidence" >&2
     cleanup_status=1
   fi
   return "$cleanup_status"
@@ -2134,16 +2137,18 @@ rerecord_device_shifted_pr_poll() {  # <id>
   local id=$1
   fm_pr_poll_registration_device_shifted "$STATE" "$id" "$SCRIPT_DIR/fm-pr-poll.sh" || return 1
   PR_POLL_CONTROL_LOCK="$STATE/.control-$id.lock"
-  fm_lock_acquire_wait "$PR_POLL_CONTROL_LOCK" || exit 1
+  fm_lock_acquire_wait "$PR_POLL_CONTROL_LOCK" \
+    || watch_fail "PR poll control lock could not be acquired for $id"
   PR_POLL_PUBLISH_LOCK="$STATE/.pr-poll-publish-$id.lock"
-  fm_lock_acquire_wait "$PR_POLL_PUBLISH_LOCK" || exit 1
+  fm_lock_acquire_wait "$PR_POLL_PUBLISH_LOCK" \
+    || watch_fail "PR poll publish lock could not be acquired for $id"
   if fm_pr_poll_registration_rerecord_device "$STATE" "$id" "$SCRIPT_DIR/fm-pr-poll.sh"; then
     triage_log "re-recorded PR poll identity for $id after its state volume device number changed"
   else
     triage_log "PR poll identity for $id was not re-recorded; the locked proof or rewrite did not hold"
   fi
-  pr_poll_publish_release || exit 1
-  pr_poll_control_release || exit 1
+  pr_poll_publish_release || watch_fail "PR poll publish lock could not be released for $id"
+  pr_poll_control_release || watch_fail "PR poll control lock could not be released for $id"
   return 0
 }
 
