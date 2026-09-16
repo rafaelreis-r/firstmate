@@ -1323,33 +1323,6 @@ window_retired() {  # <window> <window-key>
   return 0
 }
 
-# Drop the per-window records of every retired key this home no longer records,
-# so a retirement marker leaves with the metadata it was recorded against
-# instead of outliving it. A home with no retired window pays one glob that
-# matches nothing; a home with any retired window pays ONE metadata scan for
-# the whole poll, not one per marker, and derives its keys inside that single
-# subshell - this runs on the ordinary poll hot path, which the stale loop
-# below protects just as explicitly.
-prune_orphan_window_records() {
-  local marker key w recorded='' enumerated=0
-  for marker in "$STATE"/.retired-*; do
-    [ -e "$marker" ] || continue
-    if [ "$enumerated" -eq 0 ]; then
-      recorded=$(while IFS= read -r w; do window_key "$w"; printf '\n'; done < <(recorded_windows))
-      recorded="|${recorded//$'\n'/|}|"
-      enumerated=1
-    fi
-    key=${marker##*/.retired-}
-    case "$recorded" in
-      *"|$key|"*) continue ;;
-    esac
-    rm -f "$marker" "$STATE/.hash-$key" "$STATE/.count-$key" "$STATE/.stale-$key" \
-      "$STATE/.stale-since-$key" "$STATE/.churn-since-$key" "$STATE/.wedge-escalations-$key" \
-      "$STATE/.writing-since-$key" "$STATE/.writing-resurfaced-$key" "$STATE/.paused-$key" \
-      "$STATE/.paused-rechecked-$key" "$STATE/.paused-resurfaced-$key"
-  done
-}
-
 # Reconcile a declared pause or captain-held status with authoritative crew state.
 # After fm-crew-state has fallen back to stopped or unknown, paused classification is
 # recovered only for a confidently dead ordinary crew, or for a secondmate, whose
@@ -2513,9 +2486,6 @@ EOF
   # stale hash is surfaced, absorbed, or timed toward escalation once (.stale-*
   # remembers the hash already classified, or the declaration a busy pane's
   # crossed turn bound already handed to the away-mode daemon).
-  # Before the scan, not after it: a cycle that surfaces a wake exits inside the
-  # loop below and would never reach a trailing sweep.
-  prune_orphan_window_records
   while IFS= read -r w; do
     kind=$(window_kind "$w")
     task=$(window_to_task "$w" "$STATE")

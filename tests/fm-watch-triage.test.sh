@@ -2046,20 +2046,7 @@ test_stale_records_retired_when_the_endpoint_is_confirmed_gone() {
   [ "$retirements" = 1 ] \
     || fail "a retired window was retired again on a later cycle ($retirements triage lines)"
 
-  # The marker leaves with the metadata it was recorded against, together with
-  # the rest of that key's now-orphaned records.
   ack_stopped_cycle "$state" || fail "could not acknowledge the second cycle"
-  rm -f "$state/a-ghost.meta"
-  printf '%s' "$pane_hash" > "$state/.hash-$live_key"
-  printf '1\n' > "$state/.count-$live_key"
-  printf 'an-older-hash' > "$state/.stale-$live_key"
-  watch_bg "$state" "$fakebin" "$out" FM_FAKE_TMUX_WINDOWS=fm-z-live \
-    FM_FAKE_TMUX_CAPTURE="$capture_file" FM_STALE_ESCALATE_SECS=999
-  pid=$!
-  wait_for_exit "$pid" 150 || fail "the third cycle did not surface the live window's stale"
-  [ ! -e "$state/.retired-$ghost_key" ] \
-    || fail "the retirement marker outlived the metadata it was recorded against"
-  ack_stopped_cycle "$state" || fail "could not acknowledge the third cycle"
   unset FM_FAKE_CREW_STATE
   pass "a stale pane whose endpoint the backend proves is gone has its records retired without a wake, and a live window keeps its own"
 }
