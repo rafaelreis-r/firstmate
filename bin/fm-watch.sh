@@ -1964,11 +1964,11 @@ if ! fm_lock_try_acquire "$WATCH_LOCK"; then
     if [ -e "$BEAT" ]; then
       beat_age=$(fm_path_age "$BEAT")
       if [ "$beat_age" -ge "$WATCHER_STALE_GRACE" ]; then
-        echo "watcher: lock held by live pid $FM_LOCK_HELD_PID but heartbeat is stale for ${beat_age}s (>${WATCHER_STALE_GRACE}s); inspect or stop that watcher before re-arming." >&2
+        echo "watcher: FAILED - lock held by live pid $FM_LOCK_HELD_PID but heartbeat is stale for ${beat_age}s (>${WATCHER_STALE_GRACE}s); inspect or stop that watcher before re-arming."
         exit 1
       fi
     elif [ "$(fm_path_age "$WATCH_LOCK")" -ge "$WATCHER_STALE_GRACE" ]; then
-      echo "watcher: lock held by live pid $FM_LOCK_HELD_PID but no heartbeat exists; inspect or stop that watcher before re-arming." >&2
+      echo "watcher: FAILED - lock held by live pid $FM_LOCK_HELD_PID but no heartbeat exists; inspect or stop that watcher before re-arming."
       exit 1
     fi
     echo "watcher: already running pid $FM_LOCK_HELD_PID"
@@ -1983,13 +1983,11 @@ if [ -n "${FM_LOCK_RECOVERED_PID:-}" ]; then
 fi
 if [ "${FM_WATCH_HANDLING_SUCCESSOR:-0}" != 1 ]; then
   if ! fm_recovery_marker_reopen_announced "$WATCHER_DOWNTIME_MARKER"; then
-    echo "watcher: recovery state could not be reopened safely; retaining stale lock evidence" >&2
-    exit 1
+    watch_fail "recovery state could not be reopened safely; retaining stale lock evidence"
   fi
 fi
 if ! fm_recovery_marker_arm_check "$WATCHER_DOWNTIME_MARKER"; then
-  echo "watcher: recovery state could not be consumed safely; retaining stale lock evidence" >&2
-  exit 1
+  watch_fail "recovery state could not be consumed safely; retaining stale lock evidence"
 fi
 if [ "${FM_WATCH_HANDLING_SUCCESSOR:-0}" = 1 ]; then
   WATCHER_RECOVERY_PENDING=0
@@ -2161,8 +2159,7 @@ resurface_after_downtime() {
   fi
   if [ "$WATCHER_RECOVERY_PENDING" -ne 1 ]; then
     if ! fm_recovery_marker_arm_check "$WATCHER_DOWNTIME_MARKER"; then
-      echo "watcher: recovery state could not be consumed safely" >&2
-      exit 1
+      watch_fail "recovery state could not be consumed safely"
     fi
     [ "$FM_RECOVERY_MARKER_ACTION" = recover ] || return 0
   fi
@@ -2204,10 +2201,7 @@ while :; do
   # A live secondmate endpoint does not prove that its own wake loop is alive.
   # Observe the foreign queue before the rest of this cycle so an aged row wakes
   # the parent without consuming or rewriting the receiving home's record.
-  secondmate_wake_stall_tick || {
-    echo "watcher: secondmate wake-loop observation failed" >&2
-    exit 1
-  }
+  secondmate_wake_stall_tick || watch_fail "secondmate wake-loop observation failed"
 
   # Process-to-event liveness repair. This never discovers a result by polling:
   # each registered source has its own child blocking on that source, and this

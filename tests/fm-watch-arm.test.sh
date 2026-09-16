@@ -943,11 +943,50 @@ test_arm_stderr_log_holds_its_byte_cap_against_long_lines() {
   pass "watch-arm: the durable stderr log holds its byte cap against very long lines"
 }
 
+# The byte cut above lands wherever 262144 bytes fall, so the row it leaves at
+# the top is normally a fragment the trim drops. A cycle whose newest record is
+# ONE row longer than the whole cap leaves no whole row to keep: dropping that
+# fragment emptied the entire durable log, deleting the very evidence
+# docs/watcher-continuity.md promises survives a failed cycle. A backend adapter
+# relaying one enormous error line (bin/backends/herdr.sh replays a failed
+# client's stderr verbatim) is exactly that input.
+test_bounded_trim_keeps_a_row_longer_than_the_whole_cap() {
+  local dir state log size
+  dir=$(make_case arm-stderr-lone-oversized-row)
+  state="$dir/state"
+  log="$state/.watch-arm-stderr.log"
+  {
+    printf '[2026-09-16T00:00:01-0300] arm_pid=1 watcher_pid=1\n'
+    printf 'watcher: FAILED - an earlier cycle\n'
+    printf '[2026-09-16T00:00:02-0300] arm_pid=2 watcher_pid=2\n'
+    head -c 300000 /dev/zero | tr '\0' 'y'
+    printf ' herdr: connection reset by peer\n'
+  } > "$log"
+  [ "$(wc -c < "$log" | tr -d '[:space:]')" -gt 262144 ] \
+    || fail "the fixture log did not exceed the documented cap"
+
+  bash -c '. "$1"; fm_bounded_log_trim "$2" 1000 262144 "^\\[.*\\] arm_pid="' _ \
+    "$ROOT/bin/fm-wake-lib.sh" "$log" \
+    || fail "the trim refused a log it exists to bound"
+
+  size=$(wc -c < "$log" | tr -d '[:space:]')
+  [ "$size" -gt 0 ] \
+    || fail "the trim emptied the durable log instead of keeping its newest row"
+  [ "$size" -le 262144 ] \
+    || fail "the trim left the log over its documented 262144-byte cap at $size bytes"
+  grep -qF 'herdr: connection reset by peer' "$log" \
+    || fail "the trim dropped the newest evidence it exists to keep: $(tail -c 200 "$log")"
+  ! ls "$state"/.watch-arm-stderr.log.tmp.* >/dev/null 2>&1 \
+    || fail "the trim left its temporary files behind"
+  pass "watch-arm: a record longer than the whole cap survives the trim instead of emptying the log"
+}
+
 test_attached_arm_reports_the_delivered_wake
 test_attached_arm_reports_the_delivered_wake_after_drain
 test_arm_refuses_an_unusable_launch_confirm_window
 test_signaled_cycle_names_its_signal_and_persists_the_reason
 test_arm_stderr_log_holds_its_byte_cap_against_long_lines
+test_bounded_trim_keeps_a_row_longer_than_the_whole_cap
 test_attached_arm_still_fails_on_a_wake_it_did_not_deliver
 test_rearm_resurfaces_durable_queue_and_remote_open_decision
 test_marker_publish_failure_retains_recovery_evidence

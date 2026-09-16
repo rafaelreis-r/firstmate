@@ -104,6 +104,30 @@ fm_path_age() {
   echo $(( $(date +%s) - m ))
 }
 
+# fm_bounded_log_trim <file> <keep-lines> <max-bytes> <header-regex>
+# Trim an append-only diagnostic log to its newest <keep-lines> rows AND
+# <max-bytes> bytes. The byte cut lands wherever the cap falls, so the leading
+# row it leaves is usually a fragment: <header-regex> identifies a whole row,
+# and a first line that does not match it is dropped. When the cap falls inside
+# a SINGLE oversized row there is no whole row to keep, and dropping that
+# fragment would leave nothing at all - the newest evidence, which is the only
+# reason the log exists, would be deleted to satisfy a cosmetic bound. The
+# capped bytes are kept in that case. A file that cannot be read or rewritten
+# is left exactly as it was.
+fm_bounded_log_trim() {  # <file> <keep-lines> <max-bytes> <header-regex>
+  local file=$1 keep=$2 max=$3 header=$4 tmp raw rc=0
+  tmp="$file.tmp.${BASHPID:-$$}"
+  raw="$tmp.raw"
+  tail -n "$keep" "$file" 2>/dev/null \
+    | tail -c "$max" > "$raw" 2>/dev/null \
+    && awk -v header="$header" 'NR > 1 || $0 ~ header' "$raw" > "$tmp" 2>/dev/null \
+    && { [ -s "$tmp" ] || { [ -s "$raw" ] && cat "$raw" > "$tmp" 2>/dev/null; }; } \
+    && mv -f "$tmp" "$file" 2>/dev/null \
+    || rc=1
+  rm -f "$tmp" "$raw" 2>/dev/null || true
+  return "$rc"
+}
+
 # fm_poll_derived_grace [poll-seconds]
 # Default guard-grace derivation: max(300, poll + 60). A watcher touches its
 # liveness beacon once per poll cycle, so a fixed 300s grace stops correctly

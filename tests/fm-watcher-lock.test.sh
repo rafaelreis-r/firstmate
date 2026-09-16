@@ -112,7 +112,10 @@ test_live_stale_watch_lock_is_actionable() {
   status=0
   PATH="$fakebin:$PATH" FM_STATE_OVERRIDE="$state" FM_GUARD_GRACE=1 FM_POLL=5 FM_SIGNAL_GRACE=1 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" 2> "$err" || status=$?
   [ "$status" -ne 0 ] || fail "watcher silently no-opped behind a live stale holder"
-  grep -F 'heartbeat is stale' "$err" >/dev/null || fail "watcher did not explain the stale live lock"
+  grep -F 'watcher: FAILED - lock held by live pid' "$out" >/dev/null \
+    || fail "watcher did not explain the stale live lock: $(cat "$out") $(cat "$err")"
+  grep -F 'heartbeat is stale' "$out" >/dev/null \
+    || fail "the refusal did not name the stale heartbeat: $(cat "$out")"
   pass "live watcher lock with stale heartbeat is actionable"
 }
 
