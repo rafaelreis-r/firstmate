@@ -888,10 +888,66 @@ test_signaled_cycle_names_its_signal_and_persists_the_reason() {
   pass "watch-arm: a signaled cycle names its signal and the arm keeps that reason on disk"
 }
 
+# docs/watcher-continuity.md promises .watch-arm-stderr.log is "size-capped at
+# 262144 bytes, trimmed to the newest 1000 lines". A backend adapter that relays
+# a handful of enormous stderr lines satisfies the line bound while blowing the
+# byte bound, so a line-count trim alone can never bring the file back under the
+# documented cap.
+test_arm_stderr_log_holds_its_byte_cap_against_long_lines() {
+  local dir home state fakebin armout armerr log watcher_pid status size i
+  dir=$(make_case arm-stderr-byte-cap)
+  home="$dir"
+  state="$dir/state"
+  fakebin="$dir/fakebin"
+  armout="$dir/arm.out"
+  armerr="$dir/arm.err"
+  log="$state/.watch-arm-stderr.log"
+  for i in 1 2 3; do
+    printf '[2026-09-16T00:00:0%s-0300] arm_pid=%s watcher_pid=%s\n' "$i" "$i" "$i" >> "$log"
+    head -c 120000 /dev/zero | tr '\0' 'x' >> "$log"
+    printf '\n' >> "$log"
+  done
+  size=$(wc -c < "$log" | tr -d '[:space:]')
+  [ "$size" -gt 262144 ] || fail "the fixture log did not exceed the documented cap: $size"
+  [ "$(wc -l < "$log" | tr -d '[:space:]')" -lt 1000 ] \
+    || fail "the fixture log must stay under the line bound so only the byte bound can trim it"
+
+  PATH="$fakebin:$PATH" FM_HOME="$home" FM_STATE_OVERRIDE="$state" \
+    FM_POLL=1 FM_SIGNAL_GRACE=1 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 \
+    "$WATCH_ARM" --restart > "$armout" 2> "$armerr" &
+  ARM_PID=$!
+  i=0
+  while [ "$i" -lt 100 ]; do
+    grep -q '^watcher: started ' "$armout" 2>/dev/null && break
+    sleep 0.1
+    i=$((i + 1))
+  done
+  grep -q '^watcher: started ' "$armout" \
+    || fail "the arm never started a watcher: $(cat "$armout") $(cat "$armerr")"
+  watcher_pid=$(cat "$state/.watch.lock/pid" 2>/dev/null || true)
+  [ -n "$watcher_pid" ] || fail "the started watcher recorded no pid in the lock"
+  kill -TERM "$watcher_pid" 2>/dev/null || fail "could not signal watcher pid $watcher_pid"
+  wait_for_exit "$ARM_PID" 200
+  status=$?
+  [ "$status" -ne 124 ] || fail "the arm never closed after its cycle was signaled"
+
+  size=$(wc -c < "$log" | tr -d '[:space:]')
+  [ "$size" -le 262144 ] \
+    || fail "the stderr log stayed over its documented 262144-byte cap at $size bytes"
+  grep -qF 'watcher: FAILED - signal SIGTERM' "$log" \
+    || fail "the trim dropped the newest reason it exists to keep: $(tail -c 400 "$log")"
+  head -1 "$log" | grep -q '^\[.*\] arm_pid=' \
+    || fail "the trim left a partial record as the first row: $(head -c 120 "$log")"
+  ! ls "$state"/.watch-arm-stderr.log.tmp.* >/dev/null 2>&1 \
+    || fail "the trim left its temporary files behind"
+  pass "watch-arm: the durable stderr log holds its byte cap against very long lines"
+}
+
 test_attached_arm_reports_the_delivered_wake
 test_attached_arm_reports_the_delivered_wake_after_drain
 test_arm_refuses_an_unusable_launch_confirm_window
 test_signaled_cycle_names_its_signal_and_persists_the_reason
+test_arm_stderr_log_holds_its_byte_cap_against_long_lines
 test_attached_arm_still_fails_on_a_wake_it_did_not_deliver
 test_rearm_resurfaces_durable_queue_and_remote_open_decision
 test_marker_publish_failure_retains_recovery_evidence

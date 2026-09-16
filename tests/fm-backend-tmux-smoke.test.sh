@@ -187,5 +187,25 @@ if fm_backend_endpoint_confirmed_gone tmux "${SESSION}-ghost:fm-only-recorded-he
 fi
 pass "real tmux: endpoint-gone proof comes from the exact recorded session, never a prefix-named neighbor"
 
+# The same predicate reads the inventory through grep. A recorded window whose
+# name begins with `-` is a pattern argument, not an option: without a `--`
+# terminator grep exits 2 on the malformed option and the predicate's leading
+# negation turns that error into PROVEN GONE for a window it never searched for,
+# retiring a live endpoint's durable records.
+tmux new-session -d -s dashes -x 200 -y 50 \
+  || fail "real tmux: new-session for the leading-dash window case failed"
+tmux new-window -t '=dashes' -n '-x' \
+  || fail "real tmux: new-window named -x failed"
+tmux list-windows -t '=dashes' -F '#{window_name}' | grep -qxF -- '-x' \
+  || fail "real tmux: the leading-dash window was not created"
+if fm_backend_endpoint_confirmed_gone tmux 'dashes:-x'; then
+  fail "a live window whose name begins with a dash was read as proof this endpoint is gone"
+fi
+tmux kill-window -t '=dashes:=-x' || fail "real tmux: could not kill the leading-dash window"
+if ! fm_backend_endpoint_confirmed_gone tmux 'dashes:-x'; then
+  fail "a killed leading-dash window in a live, readable session was not proven gone"
+fi
+pass "real tmux: a window name beginning with a dash is searched for, not read as a grep option"
+
 cleanup_all
 trap - EXIT

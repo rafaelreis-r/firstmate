@@ -312,7 +312,7 @@ fm_backend_tmux_endpoint_confirmed_gone() {  # <target>
   session=${target%%:*}
   window=${target#*:}
   windows=$(fm_backend_tmux_window_inventory "=$session") || return 1
-  ! printf '%s\n' "$windows" | grep -Fqx "$window"
+  ! printf '%s\n' "$windows" | grep -Fqx -- "$window"
 }
 
 # fm_backend_tmux_agent_state: recovery-grade harness-agent state for one

@@ -392,7 +392,7 @@ print_watch_output() {
 # the child has been reaped, so a signal trap's final reason line is already on
 # disk. Best-effort and bounded: losing this evidence must never stall a cycle.
 child_stderr_flush() {
-  local size i=0
+  local size i=0 tmp raw
   [ -n "$child_err" ] || return 0
   if [ -s "$child_err" ]; then
     grep -q '^watcher: FAILED' "$child_err" 2>/dev/null && CHILD_STDERR_EXPLAINED=1
@@ -421,9 +421,13 @@ child_stderr_flush() {
       ''|*[!0-9]*) ;;
       *)
         if [ "$size" -ge "$ARM_STDERR_MAX_BYTES" ]; then
-          tail -n "$ARM_STDERR_KEEP_LINES" "$ARM_STDERR_LOG" > "$ARM_STDERR_LOG.tmp.$ARM_PID" 2>/dev/null \
-            && mv -f "$ARM_STDERR_LOG.tmp.$ARM_PID" "$ARM_STDERR_LOG" 2>/dev/null
-          rm -f "$ARM_STDERR_LOG.tmp.$ARM_PID" 2>/dev/null || true
+          tmp="$ARM_STDERR_LOG.tmp.$ARM_PID"
+          raw="$tmp.raw"
+          tail -n "$ARM_STDERR_KEEP_LINES" "$ARM_STDERR_LOG" 2>/dev/null \
+            | tail -c "$ARM_STDERR_MAX_BYTES" > "$raw" 2>/dev/null \
+            && awk 'NR > 1 || /^\[.*\] arm_pid=/' "$raw" > "$tmp" 2>/dev/null \
+            && mv -f "$tmp" "$ARM_STDERR_LOG" 2>/dev/null
+          rm -f "$tmp" "$raw" 2>/dev/null || true
         fi
         ;;
     esac
