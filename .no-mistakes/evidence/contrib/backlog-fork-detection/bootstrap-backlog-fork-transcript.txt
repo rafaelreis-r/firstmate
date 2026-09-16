@@ -1,0 +1,69 @@
+workdir: /tmp/fm-fork-drive.FnbCrW
+
+==================== S1: code root sem sessao propria (sem state/.lock) -> fork REPORTADO ====================
+--- arvore:
+    ./code/.tasks.toml
+    ./code/data/backlog.md
+    ./code/data/done-archive.md
+    ./home/data/backlog.md
+    ./home/data/done-archive.md
+--- saida do bootstrap rodando no home $D1/home:
+    BACKLOG_RECONCILE: code-root /tmp/fm-fork-drive.FnbCrW/s1/code/data/backlog.md is not this home's /tmp/fm-fork-drive.FnbCrW/s1/home/data/backlog.md; tasks-axi wrote the code root instead of this home, so rows in it may be missing here - merge it into this home's copy and move it aside
+    BACKLOG_RECONCILE: code-root /tmp/fm-fork-drive.FnbCrW/s1/code/data/done-archive.md is not this home's /tmp/fm-fork-drive.FnbCrW/s1/home/data/done-archive.md; tasks-axi wrote the code root instead of this home, so rows in it may be missing here - merge it into this home's copy and move it aside
+
+==================== S2: code root e um home primario operante (lock real via bin/fm-lock.sh) -> SILENCIO ====================
+--- adquirindo o lock de sessao real no code root:
+    lock acquired: harness pid 93805
+--- state/.lock gravado (pid do harness):
+    -rw-r--r--  1 rafaelreisr  wheel  6 Sep 16 10:52 /tmp/fm-fork-drive.FnbCrW/s2/code/state/.lock
+    conteudo: 93805
+--- status do lock pelo proprio CLI:
+    lock: held by live harness pid 93805
+--- saida do bootstrap rodando no home $D2/home (esperado: nenhuma linha):
+    (nenhuma linha BACKLOG_RECONCILE)
+
+==================== S3: lock existe SO no home, nao no code root -> fork REPORTADO ====================
+--- locks presentes:
+    -rw-r--r--  1 rafaelreisr  wheel  6 Sep 16 10:52 /tmp/fm-fork-drive.FnbCrW/s3/home/state/.lock
+    ls: /tmp/fm-fork-drive.FnbCrW/s3/code/state/.lock: No such file or directory
+    BACKLOG_RECONCILE: code-root /tmp/fm-fork-drive.FnbCrW/s3/code/data/backlog.md is not this home's /tmp/fm-fork-drive.FnbCrW/s3/home/data/backlog.md; tasks-axi wrote the code root instead of this home, so rows in it may be missing here - merge it into this home's copy and move it aside
+    BACKLOG_RECONCILE: code-root /tmp/fm-fork-drive.FnbCrW/s3/code/data/done-archive.md is not this home's /tmp/fm-fork-drive.FnbCrW/s3/home/data/done-archive.md; tasks-axi wrote the code root instead of this home, so rows in it may be missing here - merge it into this home's copy and move it aside
+
+==================== S4: adversarial - state/.lock do code root e um DIRETORIO -> fork REPORTADO ====================
+    drwxr-xr-x  2 rafaelreisr  wheel  64 Sep 16 10:52 /tmp/fm-fork-drive.FnbCrW/s4/code/state/.lock
+    BACKLOG_RECONCILE: code-root /tmp/fm-fork-drive.FnbCrW/s4/code/data/backlog.md is not this home's /tmp/fm-fork-drive.FnbCrW/s4/home/data/backlog.md; tasks-axi wrote the code root instead of this home, so rows in it may be missing here - merge it into this home's copy and move it aside
+    BACKLOG_RECONCILE: code-root /tmp/fm-fork-drive.FnbCrW/s4/code/data/done-archive.md is not this home's /tmp/fm-fork-drive.FnbCrW/s4/home/data/done-archive.md; tasks-axi wrote the code root instead of this home, so rows in it may be missing here - merge it into this home's copy and move it aside
+
+==================== S5: adversarial - state/.lock do code root e symlink quebrado -> fork REPORTADO ====================
+    lrwxr-xr-x  1 rafaelreisr  wheel  50 Sep 16 10:52 /tmp/fm-fork-drive.FnbCrW/s5/code/state/.lock -> /tmp/fm-fork-drive.FnbCrW/s5/code/state/nao-existe
+    BACKLOG_RECONCILE: code-root /tmp/fm-fork-drive.FnbCrW/s5/code/data/backlog.md is not this home's /tmp/fm-fork-drive.FnbCrW/s5/home/data/backlog.md; tasks-axi wrote the code root instead of this home, so rows in it may be missing here - merge it into this home's copy and move it aside
+    BACKLOG_RECONCILE: code-root /tmp/fm-fork-drive.FnbCrW/s5/code/data/done-archive.md is not this home's /tmp/fm-fork-drive.FnbCrW/s5/home/data/done-archive.md; tasks-axi wrote the code root instead of this home, so rows in it may be missing here - merge it into this home's copy and move it aside
+
+==================== S6: layout single-home (code root e o home) continua silencioso ====================
+    (nenhuma linha BACKLOG_RECONCILE)
+
+==================== S7: regressao - mesmo layout do S2 contra o bootstrap do commit base af1f2ea ====================
+--- lock real presente no code root: 93805
+--- bootstrap ANTES do fix (af1f2ea):
+    BACKLOG_RECONCILE: code-root /tmp/fm-fork-drive.FnbCrW/s7/code/data/backlog.md is not this home's /tmp/fm-fork-drive.FnbCrW/s7/home/data/backlog.md; tasks-axi wrote the code root instead of this home, so rows in it may be missing here - merge it into this home's copy and move it aside
+    BACKLOG_RECONCILE: code-root /tmp/fm-fork-drive.FnbCrW/s7/code/data/done-archive.md is not this home's /tmp/fm-fork-drive.FnbCrW/s7/home/data/done-archive.md; tasks-axi wrote the code root instead of this home, so rows in it may be missing here - merge it into this home's copy and move it aside
+--- bootstrap DEPOIS do fix (HEAD), mesmo diretorio:
+    (nenhuma linha BACKLOG_RECONCILE)
+
+==================== fim ====================
+workdir preservado em: /tmp/fm-fork-drive.FnbCrW
+
+==================== S8: lock ranco (pid morto, sessao encerrada ha muito) -> supressao por desenho ====================
+--- lock com pid inexistente: 999999
+--- fm-lock.sh status:
+    lock: stale (pid 999999 dead or not a harness)
+    (nenhuma linha BACKLOG_RECONCILE - suprimido)
+
+==================== S9: adversarial - state/.lock do code root e symlink para arquivo regular qualquer ====================
+    lrwxr-xr-x  1 rafaelreisr  wheel  42 Sep 16 10:53 /tmp/fm-fork-drive2.E7Xt89/s9/code/state/.lock -> /tmp/fm-fork-drive2.E7Xt89/s9/qualquer.txt
+    (nenhuma linha BACKLOG_RECONCILE - suprimido)
+
+==================== S10: code root com lock proprio E backlog identico ao do home via link -> continua silencioso ====================
+    (nenhuma linha BACKLOG_RECONCILE)
+
+workdir: /tmp/fm-fork-drive2.E7Xt89
