@@ -112,10 +112,10 @@ test_live_stale_watch_lock_is_actionable() {
   status=0
   PATH="$fakebin:$PATH" FM_STATE_OVERRIDE="$state" FM_GUARD_GRACE=1 FM_POLL=5 FM_SIGNAL_GRACE=1 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" 2> "$err" || status=$?
   [ "$status" -ne 0 ] || fail "watcher silently no-opped behind a live stale holder"
-  grep -F 'watcher: FAILED - lock held by live pid' "$out" >/dev/null \
+  grep -F 'watcher: FAILED - lock held by live pid' "$err" >/dev/null \
     || fail "watcher did not explain the stale live lock: $(cat "$out") $(cat "$err")"
-  grep -F 'heartbeat is stale' "$out" >/dev/null \
-    || fail "the refusal did not name the stale heartbeat: $(cat "$out")"
+  grep -F 'heartbeat is stale' "$err" >/dev/null \
+    || fail "the refusal did not name the stale heartbeat: $(cat "$err")"
   pass "live watcher lock with stale heartbeat is actionable"
 }
 
@@ -817,11 +817,12 @@ test_arm_waits_for_peer_beacon_after_child_stands_down() {
 }
 
 test_arm_fails_loud_when_no_fresh_watcher_confirmable() {
-  local dir state fakebin armout live armpid status
+  local dir state fakebin armout armerr live armpid status
   dir=$(make_case arm-failed-stale)
   state="$dir/state"
   fakebin="$dir/fakebin"
   armout="$dir/arm.out"
+  armerr="$dir/arm.err"
   sleep 300 &
   live=$!
   # A live process holds the lock but is NOT a confirmable watcher (no identity),
@@ -830,13 +831,16 @@ test_arm_fails_loud_when_no_fresh_watcher_confirmable() {
   mkdir "$state/.watch.lock"
   printf '%s\n' "$live" > "$state/.watch.lock/pid"
   touch -t 200001010000 "$state/.last-watcher-beat"
-  PATH="$fakebin:$PATH" FM_STATE_OVERRIDE="$state" FM_POLL=5 FM_SIGNAL_GRACE=1 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 FM_ARM_CONFIRM_TIMEOUT=3 "$WATCH_ARM" > "$armout" &
+  PATH="$fakebin:$PATH" FM_STATE_OVERRIDE="$state" FM_POLL=5 FM_SIGNAL_GRACE=1 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 FM_ARM_CONFIRM_TIMEOUT=3 "$WATCH_ARM" > "$armout" 2> "$armerr" &
   armpid=$!
   wait_for_exit "$armpid" 120
   status=$?
   [ "$status" -ne 124 ] || fail "arm never returned for an unconfirmable watcher"
   [ "$status" -ne 0 ] || fail "arm exited zero when no fresh watcher could be confirmed"
-  grep -F 'watcher: FAILED' "$armout" >/dev/null || fail "arm did not print a typed FAILED line"
+  grep -F 'watcher: FAILED' "$armout" "$armerr" >/dev/null \
+    || fail "arm did not print a typed FAILED line: $(cat "$armout") $(cat "$armerr")"
+  grep -F 'watcher: FAILED - lock held by live pid' "$state/.watch-arm-stderr.log" >/dev/null \
+    || fail "the refusal did not survive in the durable stderr log: $(cat "$state/.watch-arm-stderr.log" 2>/dev/null)"
   ! grep -qE 'watcher: (healthy|attached)' "$armout" || fail "arm reported attached/healthy off a stale beacon"
   ! grep -qF 'watcher: started' "$armout" || fail "arm falsely reported started"
   is_live_non_zombie "$live" || fail "arm killed the unrelated live lock holder"

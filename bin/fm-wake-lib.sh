@@ -120,7 +120,7 @@ fm_bounded_log_trim() {  # <file> <keep-lines> <max-bytes> <header-regex>
   raw="$tmp.raw"
   tail -n "$keep" "$file" 2>/dev/null \
     | tail -c "$max" > "$raw" 2>/dev/null \
-    && awk -v header="$header" 'NR > 1 || $0 ~ header' "$raw" > "$tmp" 2>/dev/null \
+    && awk 'NR > 1 || /'"$header"'/' "$raw" > "$tmp" 2>/dev/null \
     && { [ -s "$tmp" ] || { [ -s "$raw" ] && cat "$raw" > "$tmp" 2>/dev/null; }; } \
     && mv -f "$tmp" "$file" 2>/dev/null \
     || rc=1

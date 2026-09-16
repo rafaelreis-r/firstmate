@@ -981,12 +981,57 @@ test_bounded_trim_keeps_a_row_longer_than_the_whole_cap() {
   pass "watch-arm: a record longer than the whole cap survives the trim instead of emptying the log"
 }
 
+# The line bound can retire enough rows on its own that the byte cut passes the
+# result through untouched, and then the first retained line is a WHOLE record,
+# not a fragment. Only the header pattern tells those two apart, so a pattern
+# that never matches silently eats one real record - here the `[timestamp]
+# arm_pid= watcher_pid=` line that attributes the reason lines under it, leaving
+# an orphan `watcher: FAILED - ...` with no cycle to belong to.
+test_bounded_trim_keeps_a_whole_first_record() {
+  local dir state log pad i lines
+  dir=$(make_case arm-stderr-whole-first-row)
+  state="$dir/state"
+  log="$state/.watch-arm-stderr.log"
+  # Wide enough that the whole log passes the byte cap (so a trim runs at all),
+  # narrow enough that the newest 1000 lines fit under it (so the byte cut hands
+  # those rows through whole and the first retained line is a real header).
+  pad=$(head -c 200 /dev/zero | tr '\0' 'z')
+  i=1
+  while [ "$i" -le 1000 ]; do
+    printf '[2026-09-16T00:00:%02d-0300] arm_pid=%s watcher_pid=%s\n' "$((i % 60))" "$i" "$i"
+    printf 'watcher: FAILED - signal SIGTERM in cycle %s\n' "$i"
+    printf '  relayed adapter line a for cycle %s %s\n' "$i" "$pad"
+    printf '  relayed adapter line b for cycle %s %s\n' "$i" "$pad"
+    i=$((i + 1))
+  done > "$log"
+  [ "$(wc -c < "$log" | tr -d '[:space:]')" -ge 262144 ] \
+    || fail "the fixture log did not reach the byte cap that triggers a trim"
+  tail -n 1000 "$log" | head -1 | grep -q '^\[.*\] arm_pid=' \
+    || fail "the fixture's retained window does not begin on a whole record"
+  [ "$(tail -n 1000 "$log" | wc -c | tr -d '[:space:]')" -le 262144 ] \
+    || fail "the fixture's retained window is itself over the byte cap, so it cannot pass through whole"
+
+  bash -c '. "$1"; fm_bounded_log_trim "$2" 1000 262144 "^\\[.*\\] arm_pid="' _ \
+    "$ROOT/bin/fm-wake-lib.sh" "$log" \
+    || fail "the trim refused a log it exists to bound"
+
+  head -1 "$log" | grep -q '^\[.*\] arm_pid=' \
+    || fail "the trim ate the whole record that opens the retained window: $(head -2 "$log")"
+  lines=$(wc -l < "$log" | tr -d '[:space:]')
+  [ "$lines" -eq 1000 ] \
+    || fail "the trim kept $lines rows instead of the 1000 whole rows it retained"
+  [ "$(wc -c < "$log" | tr -d '[:space:]')" -le 262144 ] \
+    || fail "the trim left the log over its documented 262144-byte cap"
+  pass "watch-arm: a whole record opening the retained window survives the trim"
+}
+
 test_attached_arm_reports_the_delivered_wake
 test_attached_arm_reports_the_delivered_wake_after_drain
 test_arm_refuses_an_unusable_launch_confirm_window
 test_signaled_cycle_names_its_signal_and_persists_the_reason
 test_arm_stderr_log_holds_its_byte_cap_against_long_lines
 test_bounded_trim_keeps_a_row_longer_than_the_whole_cap
+test_bounded_trim_keeps_a_whole_first_record
 test_attached_arm_still_fails_on_a_wake_it_did_not_deliver
 test_rearm_resurfaces_durable_queue_and_remote_open_decision
 test_marker_publish_failure_retains_recovery_evidence
