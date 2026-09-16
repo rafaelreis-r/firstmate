@@ -1,0 +1,28 @@
+### Scenario 1: primary home with config/herdr-workspace-label = 'Mate Raiz'
+    custom label                 pane=w1:p2    workspace=w1   herdr label='[1] Mate Raiz'        normalized='Mate Raiz'
+ok - 1. custom label: the crewmate's tab is live in the workspace labeled 'Mate Raiz'
+### Scenario 2: a second task from the SAME home joins the same 'Mate Raiz' workspace
+    custom label (2nd task)      pane=w2:p2    workspace=w2   herdr label='[2] Mate Raiz'        normalized='Mate Raiz'
+    adoption: second task reused the first workspace? no (w2 vs w1)
+ok - 2. custom label: a second task from the same home also lands under 'Mate Raiz'
+### Scenario 3: primary home with NO label file keeps 'firstmate'
+    no override                  pane=w3:p2    workspace=w3   herdr label='[3] firstmate'        normalized='firstmate'
+ok - 3. no override: an untouched home still lands in 'firstmate', in its own workspace
+### Scenario 4 (adversarial): a two-line label file is refused, not propagated
+    two-line override            pane=w4:p2    workspace=w4   herdr label='[4] firstmate'        normalized='firstmate'
+ok - 4. adversarial two-line override: refused - the task landed in 'firstmate' and no newline reached a herdr label
+### Scenario 5 (adversarial): an unreadable label file must not kill the 'set -eu' spawn
+    fm-spawn.sh exit status with an unreadable label file: 0
+    unreadable override          pane=w5:p2    workspace=w5   herdr label='[5] firstmate'        normalized='firstmate'
+ok - 5. adversarial unreadable override: fm-spawn.sh survived (rc 0) and degraded to 'firstmate'
+### Scenario 6: a secondmate home's marker wins over its own label file
+    secondmate + override        pane=w6:p2    workspace=w6   herdr label='[6] 2ndmate-livesm1'  normalized='2ndmate-livesm1'
+ok - 6. precedence: a secondmate home carrying its own label file still lands in '2ndmate-livesm1'
+
+### Final workspace inventory in the isolated lab session
+    w1	[1] Mate Raiz	(2 tabs)
+    w2	[2] Mate Raiz	(1 tabs)
+    w3	[3] firstmate	(1 tabs)
+    w4	[4] firstmate	(2 tabs)
+    w5	[5] firstmate	(1 tabs)
+    w6	[6] 2ndmate-livesm1	(1 tabs)

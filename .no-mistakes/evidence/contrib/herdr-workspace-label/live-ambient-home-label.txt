@@ -1,0 +1,60 @@
+
+=== prune-safety / build under test / ambient override present ===
+  ambient config/herdr-workspace-label: 'Mate Raiz'
+  suite exit status: 1
+  suite output:
+    ok - repro setup: a pre-existing workspace labeled 'firstmate' collides with the primary home's own label
+    ok - repro setup: a live long-running process is running in the startup workspace's single tab (label '1'), heartbeating to a marker file
+    not ok - container_ensure should have ADOPTED the pre-existing label-colliding workspace (w1), got 'fm-lab-prune-safety-e2e-42498:w2'
+    fm-herdr-lab: missing fleet-state tripwire for 'fm-lab-prune-safety-e2e-42498'; refusing destructive calls
+  workspace labels this run created in its lab session (observed live from outside):
+    [1] firstmate
+    firstmate
+
+=== prune-safety / pre-pinning build / ambient override present ===
+  ambient config/herdr-workspace-label: 'Mate Raiz'
+  suite exit status: 1
+  suite output:
+    ok - repro setup: a pre-existing workspace labeled 'firstmate' collides with the primary home's own label
+    ok - repro setup: a live long-running process is running in the startup workspace's single tab (label '1'), heartbeating to a marker file
+    not ok - container_ensure should have ADOPTED the pre-existing label-colliding workspace (w1), got 'fm-lab-prune-safety-e2e-49710:w2'
+    fm-herdr-lab: missing fleet-state tripwire for 'fm-lab-prune-safety-e2e-49710'; refusing destructive calls
+  workspace labels this run created in its lab session (observed live from outside):
+    [1] firstmate
+    firstmate
+
+=== smoke / build under test / ambient override present ===
+  ambient config/herdr-workspace-label: 'Mate Raiz'
+  suite exit status: 1
+  suite output:
+    ok - real herdr: version_check accepts the installed binary's protocol
+    ok - real herdr: container_ensure starts the isolated session's server, creates the firstmate workspace (fm-lab-backend-smoke-54811:w1), and reports its seeded default tab id (w1:t1)
+    ok - real herdr: session status normalizes running and compatible
+    ok - real herdr: container_ensure is idempotent (reuses/adopts the existing firstmate workspace, reports no seeded default tab on adoption)
+    not ok - expected exactly 1 tab (the seeded default pruned) after the first real task tab, got 2: {"id":"cli:tab:list","result":{"tabs":[{"agent_status":"unknown","focused":true,"label":"[1] tmp › zsh","number":1,"pane_count":1,"tab_id":"w1:t1","workspace_id":"w1"},{"agent_status":"unknown","focused":false,"label":"fm-smoke1","number":2,"pane_count":1,"tab_id":"w1:t2","workspace_id":"w1"}],"type":"tab_list"}}
+    fm-herdr-lab: missing fleet-state tripwire for 'fm-lab-backend-smoke-54811'; refusing destructive calls
+  workspace labels this run created in its lab session (observed live from outside):
+    [1] firstmate
+    firstmate
+
+=== smoke / pre-pinning build / ambient override present ===
+  ambient config/herdr-workspace-label: 'Mate Raiz'
+  suite exit status: 1
+  suite output:
+    ok - real herdr: version_check accepts the installed binary's protocol
+    ok - real herdr: container_ensure starts the isolated session's server, creates the firstmate workspace (fm-lab-backend-smoke-57038:w1), and reports its seeded default tab id (w1:t1)
+    ok - real herdr: session status normalizes running and compatible
+    ok - real herdr: container_ensure is idempotent (reuses/adopts the existing firstmate workspace, reports no seeded default tab on adoption)
+    ok - real herdr: create_task prunes the freshly-created workspace's seeded default tab, leaving exactly one clean fm-<id> task tab
+    ok - real herdr: create_task refuses a same-labeled tab whose pane hosts a genuinely live registered agent (unchanged behavior)
+    ok - real herdr: create_task closes and replaces a same-labeled tab whose pane hosts no registered agent (the restored-husk shape), leaving the workspace intact
+    ok - real herdr: a secondmate-shaped home (.fm-secondmate-home) gets its OWN herdr workspace, distinct from the primary's, in the SAME session
+    ok - real herdr: the secondmate-shaped home's workspace is labeled 2ndmate-<secondmate-id> in herdr itself
+    ok - real herdr: a task spawned into the secondmate-shaped home lands as a tab inside the secondmate's OWN workspace
+    not ok - the secondmate-shaped home's list_live did not see its own task
+    
+    fm-herdr-lab: missing fleet-state tripwire for 'fm-lab-backend-smoke-57038'; refusing destructive calls
+  workspace labels this run created in its lab session (observed live from outside):
+    Mate Raiz
+    [1] Mate Raiz
+    [2] 2ndmate-smoketest-sm1

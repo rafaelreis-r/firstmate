@@ -1,0 +1,16 @@
+Pre-existing environment failures in the two real-herdr suites (herdr herdr 0.9.0)
+Both suites already fail at BASE commit af1f2ea, before any part of this change:
+
+--- tests/fm-backend-herdr-prune-safety-e2e.test.sh @ af1f2ea ---
+  ok - repro setup: a pre-existing workspace labeled 'firstmate' collides with the primary home's own label
+  ok - repro setup: a live long-running process is running in the startup workspace's single tab (label '1'), heartbeating to a marker file
+  not ok - container_ensure should have ADOPTED the pre-existing label-colliding workspace (w1), got 'fm-lab-prune-safety-e2e-4666:w2'
+  fm-herdr-lab: missing fleet-state tripwire for 'fm-lab-prune-safety-e2e-4666'; refusing destructive calls
+
+--- tests/fm-backend-herdr-smoke.test.sh @ af1f2ea ---
+  ok - real herdr: version_check accepts the installed binary's protocol
+  ok - real herdr: container_ensure starts the isolated session's server, creates the firstmate workspace (fm-lab-backend-smoke-12498:w1), and reports its seeded default tab id (w1:t1)
+  ok - real herdr: session status normalizes running and compatible
+  ok - real herdr: container_ensure is idempotent (reuses/adopts the existing firstmate workspace, reports no seeded default tab on adoption)
+  not ok - expected exactly 1 tab (the seeded default pruned) after the first real task tab, got 2: {"id":"cli:tab:list","result":{"tabs":[{"agent_status":"unknown","focused":true,"label":"[1] tmp › zsh","number":1,"pane_count":1,"tab_id":"w1:t1","workspace_id":"w1"},{"agent_status":"unknown","focused":false,"label":"fm-smoke1","number":2,"pane_count":1,"tab_id":"w1:t2","workspace_id":"w1"}],"type":"tab_list"}}
+  fm-herdr-lab: missing fleet-state tripwire for 'fm-lab-backend-smoke-12498'; refusing destructive calls

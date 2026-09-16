@@ -1,0 +1,11 @@
+ok - fm_backend_herdr_workspace_label: a primary home (no marker) resolves to 'firstmate'
+ok - fm_backend_herdr_workspace_label: a secondmate home (.fm-secondmate-home) resolves to '2ndmate-<id>'
+ok - fm_backend_herdr_workspace_label: trims whitespace around the marker's secondmate id
+ok - fm_backend_herdr_workspace_label: an empty marker file falls back to the primary label 'firstmate'
+ok - fm_backend_herdr_workspace_label: two different secondmate homes get two different, non-colliding labels
+ok - fm_backend_herdr_workspace_label: config/herdr-workspace-label overrides the label, preserving internal spaces
+ok - fm_backend_herdr_workspace_label: an absent config/herdr-workspace-label falls back to 'firstmate'
+ok - fm_backend_herdr_workspace_label: a multi-line config/herdr-workspace-label falls back to 'firstmate'
+ok - fm_backend_herdr_workspace_label: blank lines around a single-line override are trimmed, not refused
+ok - fm_backend_herdr_workspace_label: an unreadable config/herdr-workspace-label falls back to 'firstmate' instead of killing a 'set -e' caller
+ok - fm_backend_herdr_workspace_label: the secondmate marker wins over a config/herdr-workspace-label override

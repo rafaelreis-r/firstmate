@@ -1,0 +1,75 @@
+### the captain's config/herdr-workspace-label files
+    single-line home : 0000000    M   a   t   e       R   a   i   z  \n                         0000012 
+    two-line home    : 0000000    M   a   t   e       R   a   i   z  \n   S   e   g   u   n   d 0000020    a       L   i   n   h   a  \n                                 
+
+### A. build under test (dd5c81a) + two-line label file
+
+    [under test / two-line] resolved home label: 0000000    f   i   r   s   t   m   a   t   e                             0000011 
+    --- /private/var/folders/8g/ftp_r_353ggb5ccyc_f0t2x40000gn/T/fm-journal.wJgZYy/home-multiline/state/mlA.herdr-presentation ---
+      version=2
+      task_id=mlA
+      projection_id=7ZujzPxs5UjJwnK26rba4g
+      home=/private/var/folders/8g/ftp_r_353ggb5ccyc_f0t2x40000gn/T/fm-journal.wJgZYy/home-multiline
+      session=fm-lab-journal-77296
+      workspace_id=w2
+      tab_id=w2:t1
+      pane_id=w2:p1
+      parent_workspace_id=w1
+      parent_label=firstmate
+      workspace_label=└ mlA · p:7ZujzPxs5UjJwnK26rba4g
+      task_label=fm-mlA
+      (line count: 12)
+      recovery verdict: rc=0
+      herdr-adapter: warning: quarantined herdr presentation for mlA is dead or agent-free; exact bound reclaim may proceed, otherwise spawning flat
+ok - A. two-line override on the build under test: parent_label=firstmate, 12-line binding, recovery proceeds
+
+### B. pre-guard build (3c032f5) + the SAME two-line label file
+
+    [pre-guard / two-line] resolved home label: 0000000    M   a   t   e       R   a   i   z  \n   S   e   g   u   n   d 0000020    a       L   i   n   h   a                                     
+    --- /private/var/folders/8g/ftp_r_353ggb5ccyc_f0t2x40000gn/T/fm-journal.wJgZYy/home-multiline/state/mlB.herdr-presentation ---
+      version=2
+      task_id=mlB
+      projection_id=Kn5VA-9EvXQE8tl4e8smeA
+      home=/private/var/folders/8g/ftp_r_353ggb5ccyc_f0t2x40000gn/T/fm-journal.wJgZYy/home-multiline
+      session=fm-lab-journal-77296
+      workspace_id=w4
+      tab_id=w4:t1
+      pane_id=w4:p1
+      parent_workspace_id=w3
+      parent_label=Mate Raiz
+      Segunda Linha
+      workspace_label=└ mlB · p:Kn5VA-9EvXQE8tl4e8smeA
+      task_label=fm-mlB
+      (line count: 13)
+      recovery verdict: rc=1
+      herdr-adapter: error: malformed herdr presentation journal for mlB; refusing duplicate launch
+ok - B. the SAME file on the pre-guard build writes a 13-line journal and the next launch is refused - the regression the guard removes
+
+### C. build under test + a legitimate single-line 'Mate Raiz'
+
+    [under test / single-line] resolved home label: 0000000    M   a   t   e       R   a   i   z                             0000011 
+    --- /private/var/folders/8g/ftp_r_353ggb5ccyc_f0t2x40000gn/T/fm-journal.wJgZYy/home-single/state/okC.herdr-presentation ---
+      version=2
+      task_id=okC
+      projection_id=kn1lLGrRDHK5xwW0vb6OOw
+      home=/private/var/folders/8g/ftp_r_353ggb5ccyc_f0t2x40000gn/T/fm-journal.wJgZYy/home-single
+      session=fm-lab-journal-77296
+      workspace_id=w6
+      tab_id=w6:t1
+      pane_id=w6:p1
+      parent_workspace_id=w5
+      parent_label=Mate Raiz
+      workspace_label=└ okC · p:kn1lLGrRDHK5xwW0vb6OOw
+      task_label=fm-okC
+      (line count: 12)
+      recovery verdict: rc=0
+      herdr-adapter: warning: quarantined herdr presentation for okC is dead or agent-free; exact bound reclaim may proceed, otherwise spawning flat
+ok - C. single-line 'Mate Raiz' round-trips: recorded verbatim, 12-line binding, recovery proceeds
+
+### Workspaces in the lab session
+    w1	[1] firstmate
+    w2	[2] └ mlA · p:7ZujzPxs5UjJwnK26rba4g
+    w3	[3] Mate Raiz Segunda Linha
+    w4	[4] └ mlB · p:Kn5VA-9EvXQE8tl4e8smeA
+    w5	Mate Raiz
+    w6	└ okC · p:kn1lLGrRDHK5xwW0vb6OOw

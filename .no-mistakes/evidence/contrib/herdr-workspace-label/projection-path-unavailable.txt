@@ -1,0 +1,17 @@
+Why the fm-spawn.sh presentation-projection path could not be driven on this host.
+herdr client: herdr 0.9.0
+
+A home with NO label override at all (plain default 'firstmate'), presentation spaces ON,
+after an anchor task already created the home workspace:
+
+  anchor spawn (projection off) rc=0
+  projected spawn (projection on) rc=0
+  stderr:
+    warning: herdr presentation parent is absent or ambiguous; using the ordinary flat layout without projection
+  state dir (no *.herdr-presentation journal is published):
+    anchor.meta
+    home-summary.json
+    shape.meta
+  workspaces herdr reports (note the display-index prefix the adapter's exact-label lookup cannot match):
+    w1	[1] firstmate
+    w2	[2] firstmate
