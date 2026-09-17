@@ -76,10 +76,15 @@ fm_lock_try_acquire() {
 fm_lock_release() { rm -rf -- "$1"; }
 fm_backend_herdr_pane_idle_shell_pid() {
   [ ! -e "$FIXTURE_DIR/process-unsafe" ] || return 1
+  [ ! -e "$FIXTURE_DIR/sidebar-only" ] || return 1
   [ ! -e "$FIXTURE_DIR/sidebar" ] || [ "$2" != w2:p2 ] || return 1
   printf '67\n'
 }
 fm_herdr_cleanup_sidebar() {
+  if [ -e "$FIXTURE_DIR/sidebar-only" ]; then
+    [ "$2" = w2:p1 ]
+    return
+  fi
   [ -e "$FIXTURE_DIR/sidebar" ] && [ "$2" = w2:p2 ]
 }
 fm_backend_herdr_projection_focus_snapshot() {
@@ -316,6 +321,15 @@ fm_herdr_session_cleanup >/dev/null 2>&1
 [ ! -e "$FM_STATE_OVERRIDE/$ID.herdr-presentation" ] || fail "sidebar topology kept journal"
 [ "$(cat "$CLOSE_LOG")" = "$(printf 'test w2:p2 no-agent\ntest w2:p1 no-agent')" ] || fail "sidebar did not close before agent pane"
 pass "owned sidebar closes before idle agent pane"
+
+reset_fixture; write_v2 "$FM_HOME" "$WS" "$TAB" "$PANE"; : > "$FIXTURE_DIR/sidebar-only"
+assert_preserved "sidebar-only topology with no idle shell"
+
+reset_fixture; printf '%s\n' "[4] $TITLE" > "$FIXTURE_DIR/title"
+fm_herdr_session_cleanup >/dev/null 2>&1
+[ ! -e "$FM_STATE_OVERRIDE/$ID.herdr-presentation" ] || fail "leading [N] position prefix kept the journal"
+[ "$(wc -l < "$CLOSE_LOG" | tr -d ' ')" = 1 ] || fail "leading [N] position prefix did not close exactly once"
+pass "leading [N] position prefix on the workspace label does not block cleanup"
 
 reset_fixture; write_v2 "$FM_HOME" "$WS" "$TAB" "$PANE"; : > "$FIXTURE_DIR/orphan"
 fm_herdr_session_cleanup >/dev/null 2>&1

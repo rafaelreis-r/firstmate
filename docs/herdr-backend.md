@@ -155,6 +155,7 @@ A live or unknown recorded or token-matched endpoint refuses duplicate launch.
 Locked session start has one narrower cleanup for a restored projected child that is no longer current task state.
 It runs only when the current home has at least one ordinary presentation journal and considers only that home; a primary never recursively sweeps a secondmate home.
 Discovery starts from the exact current `└ <concise-task> · p:<22-character-token>` grammar, but a title or token alone is never mutation authority.
+Herdr workspace labels can carry a volatile leading `[N] ` position prefix; cleanup strips it before matching the title grammar or the journal's expected label.
 The title must contain exactly one token occurrence across the named-session snapshot and must equal the title derived from exactly one valid presentation journal in this home's own `state/`; a version 2 journal additionally must bind this exact physical home, named session, workspace, tab, and pane.
 The task's ordinary metadata must be absent, and the candidate must have exactly one tab with one or two panes: one idle shell pane, plus at most one owned `herdr-sidebar` pane.
 Before cleanup, Firstmate acquires the existing task-id spawn lock and then the shared named-session presentation lock.
