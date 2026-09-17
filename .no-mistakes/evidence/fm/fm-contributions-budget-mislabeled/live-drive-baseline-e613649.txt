@@ -1,0 +1,77 @@
+
+=== SC1/SC2  poll budget runs out mid-sweep ===
+operator: two owned contributions; PR observed at 2026-09-16T08:00:00Z
+$ fm-contributions.sh poll   (FM_CONTRIBUTIONS_BUDGET=1)
+| contributions: observation unavailable for https://github.com/o/r/pull/8[exit 0, stdout 72 bytes]
+   [FAIL] budget exhaustion printed a forge diagnostic: contributions: observation unavailable for https://github.com/o/r/pull/8
+$ jq .records[0] data/delivery/contributions.json
+| {"url":"https://github.com/o/r/pull/8","checked_at":"2026-09-16T08:00:00Z","attempted_at":null,"error":"forge observation unavailable or changed during read","state":"open"}
+   [FAIL] budget exhaustion damaged the stored observation
+$ fm-contributions.sh poll   (next sweep, forge healthy)
+  first forge call of the next sweep: api repos/o/r/pulls/8
+   [FAIL] deferred URL starved: first call was api repos/o/r/pulls/8
+
+=== SC7  a genuine forge timeout, with budget to spare, is still reported ===
+$ fm-contributions.sh poll   (FM_CONTRIBUTIONS_BUDGET=20, gh hangs)
+| contributions: observation unavailable for https://github.com/o/r/pull/8
+   [ok]   real forge stall is still surfaced
+   [ok]   failure evidence stored on the record
+
+=== SC3  a real forge failure is reported once, not on every sweep ===
+$ poll #1
+| contributions: observation unavailable for https://github.com/o/r/pull/8
+| record.error = "forge observation unavailable or changed during read"
+   [ok]   first failure is announced
+$ poll #2
+| contributions: observation unavailable for https://github.com/o/r/pull/8
+| record.error = "forge observation unavailable or changed during read"
+   [FAIL] repeat wake
+$ poll #3   (forge recovered)
+| (silent)
+| record.error = null
+   [ok]   recovery clears the stored error
+
+=== SC3b  the same outage, seen from the supervisor ===
+$ fm-watch-checkpoint.sh --seconds 10   (forge down)
+| check: <home>/state/contributions.check.sh: contributions: observation unavailable for https://github.com/o/r/pull/8
+$ cut -f5 state/.wake-queue   (what the supervisor is woken with)
+| check: <home>/state/contributions.check.sh: contributions: observation unavailable for https://github.com/o/r/pull/8
+   [ok]   the outage reaches the supervisor once, as one durable wake
+every non-empty line the registered check prints becomes one such wake;
+the outage has not changed, so the next three sweeps must print nothing.
+$ state/contributions.check.sh   (sweep 2): contributions: observation unavailable for https://github.com/o/r/pull/8
+$ state/contributions.check.sh   (sweep 3): contributions: observation unavailable for https://github.com/o/r/pull/8
+$ state/contributions.check.sh   (sweep 4): contributions: observation unavailable for https://github.com/o/r/pull/8
+   [FAIL] 3 further supervisor wakes for the same unchanged outage
+
+=== SC4  a merged PR with nothing pending stops being re-observed ===
+operator: PR #8 merged on 2026-09-01, backlog row still links it
+$ fm-contributions.sh poll
+| forge calls made: 8
+   [FAIL] merged PR was re-observed
+$ fm-bearings-snapshot.sh --json   (clock 2026-09-16T08:00:00Z)
+| {"known":1,"checked":1,"counts":{"captain":0,"fleet":0,"maintainer":1,"nobody":0},"proven_clear":true}
+   [FAIL] at 2026-09-16T08:00:00Z merged work decayed into fleet work
+$ fm-bearings-snapshot.sh --json   (clock 2027-06-01T00:00:00Z)
+| {"known":1,"checked":0,"counts":{"captain":0,"fleet":1,"maintainer":0,"nobody":0},"proven_clear":false}
+   [FAIL] at 2027-06-01T00:00:00Z merged work decayed into fleet work
+
+=== SC5  adversarial: merged, but a maintainer left feedback ===
+| counts {"captain":0,"fleet":1,"maintainer":0,"nobody":0}
+   [ok]   unresolved feedback on a merged PR is still fleet work
+$ fm-contributions.sh pending
+| {"task":"delivery","url":"https://github.com/o/r/pull/8","token":"review:terminal"}
+   [ok]   still polled while feedback is open
+$ fm-contributions.sh ack delivery https://github.com/o/r/pull/8 review:terminal
+   [FAIL] still polling after ack
+
+=== SC6  adversarial: merged, but the captain still holds it ===
+| {"counts":{"captain":0,"fleet":2,"maintainer":0,"nobody":0},"proven_clear":false,"captain":[]}
+   [FAIL] merged precedence swallowed the live captain hold
+
+=== SC8  adversarial: closed but unmerged work stays live ===
+| forge calls made: 8
+   [ok]   a closed, unmerged PR is still observed
+
+================================
+DRIVEN SCENARIOS FAILED

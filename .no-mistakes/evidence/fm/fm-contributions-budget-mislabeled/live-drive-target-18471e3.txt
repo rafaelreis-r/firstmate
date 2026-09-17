@@ -1,0 +1,77 @@
+
+=== SC1/SC2  poll budget runs out mid-sweep ===
+operator: two owned contributions; PR observed at 2026-09-16T08:00:00Z
+$ fm-contributions.sh poll   (FM_CONTRIBUTIONS_BUDGET=1)
+[exit 0, stdout 0 bytes]
+   [ok]   no forge-unavailable diagnostic, so the supervisor is not woken
+$ jq .records[0] data/delivery/contributions.json
+| {"url":"https://github.com/o/r/pull/8","checked_at":"2026-09-16T08:00:00Z","attempted_at":"2026-09-16T08:00:00Z","error":null,"state":"open"}
+   [ok]   last coherent observation preserved intact
+$ fm-contributions.sh poll   (next sweep, forge healthy)
+  first forge call of the next sweep: api repos/o/r/issues/9
+   [ok]   the URL that was skipped goes first next time (no starvation)
+
+=== SC7  a genuine forge timeout, with budget to spare, is still reported ===
+$ fm-contributions.sh poll   (FM_CONTRIBUTIONS_BUDGET=20, gh hangs)
+| contributions: observation unavailable for https://github.com/o/r/pull/8
+   [ok]   real forge stall is still surfaced
+   [ok]   failure evidence stored on the record
+
+=== SC3  a real forge failure is reported once, not on every sweep ===
+$ poll #1
+| contributions: observation unavailable for https://github.com/o/r/pull/8
+| record.error = "forge observation unavailable or changed during read"
+   [ok]   first failure is announced
+$ poll #2
+| (silent)
+| record.error = "forge observation unavailable or changed during read"
+   [ok]   unchanged failure does not wake the supervisor again
+$ poll #3   (forge recovered)
+| (silent)
+| record.error = null
+   [ok]   recovery clears the stored error
+
+=== SC3b  the same outage, seen from the supervisor ===
+$ fm-watch-checkpoint.sh --seconds 10   (forge down)
+| check: <home>/state/contributions.check.sh: contributions: observation unavailable for https://github.com/o/r/pull/8
+$ cut -f5 state/.wake-queue   (what the supervisor is woken with)
+| check: <home>/state/contributions.check.sh: contributions: observation unavailable for https://github.com/o/r/pull/8
+   [ok]   the outage reaches the supervisor once, as one durable wake
+every non-empty line the registered check prints becomes one such wake;
+the outage has not changed, so the next three sweeps must print nothing.
+$ state/contributions.check.sh   (sweep 2): (silent)
+$ state/contributions.check.sh   (sweep 3): (silent)
+$ state/contributions.check.sh   (sweep 4): (silent)
+   [ok]   no further supervisor wake while the outage is unchanged
+
+=== SC4  a merged PR with nothing pending stops being re-observed ===
+operator: PR #8 merged on 2026-09-01, backlog row still links it
+$ fm-contributions.sh poll
+| forge calls made: 0
+   [ok]   no forge traffic for merged, settled work
+$ fm-bearings-snapshot.sh --json   (clock 2026-09-16T08:00:00Z)
+| {"known":1,"checked":1,"counts":{"captain":0,"fleet":0,"maintainer":0,"nobody":1},"proven_clear":true}
+   [ok]   at 2026-09-16T08:00:00Z it still needs nobody
+$ fm-bearings-snapshot.sh --json   (clock 2027-06-01T00:00:00Z)
+| {"known":1,"checked":1,"counts":{"captain":0,"fleet":0,"maintainer":0,"nobody":1},"proven_clear":true}
+   [ok]   at 2027-06-01T00:00:00Z it still needs nobody
+
+=== SC5  adversarial: merged, but a maintainer left feedback ===
+| counts {"captain":0,"fleet":1,"maintainer":0,"nobody":0}
+   [ok]   unresolved feedback on a merged PR is still fleet work
+$ fm-contributions.sh pending
+| {"task":"delivery","url":"https://github.com/o/r/pull/8","token":"review:terminal"}
+   [ok]   still polled while feedback is open
+$ fm-contributions.sh ack delivery https://github.com/o/r/pull/8 review:terminal
+   [ok]   retires only after the feedback is acknowledged
+
+=== SC6  adversarial: merged, but the captain still holds it ===
+| {"counts":{"captain":1,"fleet":0,"maintainer":0,"nobody":1},"proven_clear":false,"captain":[{"url":"https://github.com/o/r/pull/12","reason":"choose scope"}]}
+   [ok]   the held merge stays a captain call; the clear one needs nobody
+
+=== SC8  adversarial: closed but unmerged work stays live ===
+| forge calls made: 8
+   [ok]   a closed, unmerged PR is still observed
+
+================================
+ALL DRIVEN SCENARIOS PASSED

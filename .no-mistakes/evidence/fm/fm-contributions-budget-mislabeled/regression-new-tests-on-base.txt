@@ -1,0 +1,83 @@
+# new tests from 18471e3 run against the pre-fix bin/ from e613649
+not ok - budget-limited timeout claimed a forge failure
+not ok - local budget emitted a forge diagnostic: contributions: observation unavailable for https://github.com/o/r/pull/8
+not ok - unchanged forge failure repeated its notification
+not ok - merged contribution was reobserved from retained backlog
+not ok - merged delivery must keep a live captain hold and otherwise need nobody: {
+  "schema": "fm-bearings.v1",
+  "home": "fm-contributions.4KcT4B/merged-hold",
+  "generated": "2026-09-16T08:00:00Z",
+  "prs": "not_requested (run: /bearings include PRs)",
+  "contributions": {
+    "scope": "owned contributions per home",
+    "known": 2,
+    "checked": 0,
+    "counts": {
+      "captain": 0,
+      "fleet": 2,
+      "maintainer": 0,
+      "nobody": 0
+    },
+    "complete": false,
+    "proven_clear": false,
+    "unmeasured_homes": 0,
+    "unreadable_records": 0,
+    "unmeasured": 0,
+    "stale_verdicts": 0,
+    "missing_verdicts": 0,
+    "captain_omitted": 0,
+    "captain": []
+  },
+  "in_flight": [],
+  "secondmates": [],
+  "secondmate_reconcile": [],
+  "decisions_open": [
+    {
+      "id": "held",
+      "key": "held",
+      "verb": "captain-hold",
+      "summary": "Contribution held: choose scope",
+      "owner": "(main)"
+    }
+  ],
+  "landed": [],
+  "gates": [
+    {
+      "id": "clear",
+      "title": "Contribution clear",
+      "blocked_by": "-",
+      "reason": "-",
+      "owner": "(main)",
+      "filed": null
+    }
+  ],
+  "reports": [],
+  "recorded_prs": [],
+  "omitted": [
+    {
+      "surface": "backlog item bodies",
+      "reveal": "--fields bodies"
+    },
+    {
+      "surface": "task paths",
+      "reveal": "--fields paths"
+    },
+    {
+      "surface": "watch/steer actions",
+      "reveal": "--fields actions"
+    },
+    {
+      "surface": "healthy endpoint detail",
+      "reveal": "--fields endpoints"
+    },
+    {
+      "surface": "full scout-report inventory",
+      "reveal": "--all-reports"
+    },
+    {
+      "surface": "live PR discovery + checks",
+      "reveal": "--include-prs"
+    }
+  ]
+}
+failures=5
