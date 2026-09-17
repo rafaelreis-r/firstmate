@@ -58,7 +58,25 @@ make_named_shells() {  # <dir> -> echoes <bindir>
   for name in omp ompd comp; do
     ln -sf /bin/bash "$dir/$name"
   done
+  # Keep real process identities, but stop both ancestry walks at the test shell.
+  # The PATH shim prevents the harness launching this suite from becoming evidence.
+  cat > "$dir/ps" <<'SH'
+#!/usr/bin/env bash
+if [ "$*" = "-o ppid= -p $FM_TEST_ANCESTRY_ROOT" ]; then
+  printf '%s\n' 0
+else
+  exec /bin/ps "$@"
+fi
+SH
+  chmod +x "$dir/ps"
   printf '%s' "$dir"
+}
+
+under_fixture() {  # <bindir> [VAR=VAL ...] <command> [args...]
+  local bin=$1
+  shift
+  env -i HOME="$TMP_ROOT" PATH="$bin:/usr/bin:/bin:/usr/sbin:/sbin" \
+    FM_TEST_ANCESTRY_ROOT="$$" "$@"
 }
 
 # --- 1. Detection --------------------------------------------------------------
@@ -67,25 +85,27 @@ test_detection_anchored_name_and_marker_precedence() {
   local bin out
   bin=$(make_named_shells "$TMP_ROOT/named")
   # shellcheck disable=SC2016 # the quoted body expands inside the named shell
-  out=$(env -u CLAUDECODE -u FM_OMP_HARNESS -u PI_CODING_AGENT -u CURSOR_AGENT -u CURSOR_INVOKED_AS \
+  out=$(under_fixture "$bin" \
     "$bin/omp" -c '"$1"; :' _ "$HARNESS")
   [ "$out" = omp ] || fail "a process named omp must detect as omp, got '$out'"
   for decoy in ompd comp; do
     # shellcheck disable=SC2016 # the quoted body expands inside the named shell
-    out=$(env -u CLAUDECODE -u FM_OMP_HARNESS -u PI_CODING_AGENT -u CURSOR_AGENT -u CURSOR_INVOKED_AS \
+    out=$(under_fixture "$bin" \
       "$bin/$decoy" -c '"$1"; :' _ "$HARNESS")
-    [ "$out" != omp ] || fail "'$decoy' merely contains omp and must not detect as omp"
+    [ "$out" = unknown ] || fail "'$decoy' must leave no harness evidence, got '$out'"
   done
   # The marker beats an inherited CLAUDECODE only under a real omp ancestor.
   # shellcheck disable=SC2016 # the quoted body expands inside the named shell
-  out=$(env -u PI_CODING_AGENT -u CURSOR_AGENT -u CURSOR_INVOKED_AS CLAUDECODE=1 FM_OMP_HARNESS=omp \
+  out=$(under_fixture "$bin" CLAUDECODE=1 FM_OMP_HARNESS=omp \
     "$bin/omp" -c '"$1"; :' _ "$HARNESS")
   [ "$out" = omp ] || fail "FM_OMP_HARNESS under an omp ancestor must outrank an inherited CLAUDECODE, got '$out'"
   # ...and is inert when it leaks into a worker with no omp ancestor.
   # shellcheck disable=SC2016 # the quoted body expands inside the named shell
-  out=$(env -u PI_CODING_AGENT -u CURSOR_AGENT -u CURSOR_INVOKED_AS CLAUDECODE=1 FM_OMP_HARNESS=omp \
+  out=$(under_fixture "$bin" CLAUDECODE=1 FM_OMP_HARNESS=omp \
     bash -c '"$1"; :' _ "$HARNESS")
   [ "$out" = claude ] || fail "a leaked FM_OMP_HARNESS without an omp ancestor must not relabel a claude worker, got '$out'"
+  out=$(under_fixture "$bin" PI_CODING_AGENT=true FM_PI_HARNESS=pi-signed "$HARNESS")
+  [ "$out" = pi-signed ] || fail "pi-signed environment without harness ancestry resolved '$out'"
   pass "fm-harness: omp detects by its anchored name; the marker is a precedence override that needs real omp ancestry"
 }
 
@@ -107,16 +127,13 @@ fi
 SH
   for marker in '' omp; do
     # shellcheck disable=SC2016 # Preserve the named parent rather than exec it away.
-    out=$(env -u PI_CODING_AGENT -u GROK_AGENT -u CURSOR_AGENT -u CURSOR_INVOKED_AS \
-      -u GEMINI_CLI -u ATLASSIAN_AGENT_TYPE -u ROVODEV_CLI \
-      CLAUDECODE=1 FM_OMP_HARNESS="$marker" \
+    out=$(under_fixture "$bin" CLAUDECODE=1 FM_OMP_HARNESS="$marker" \
       "$bin/omp" -c 'bash "$1" 7 "$2"; :' _ "$dir/wrapper.sh" "$HARNESS")
     [ "$out" = omp ] || fail "startup wrappers hid omp behind retained CLAUDECODE (marker='$marker'): '$out'"
   done
   # No marker must still find omp, rather than silently selecting unknown.
   # shellcheck disable=SC2016
-  out=$(env -u CLAUDECODE -u PI_CODING_AGENT -u GROK_AGENT -u CURSOR_AGENT -u CURSOR_INVOKED_AS \
-    -u GEMINI_CLI -u ATLASSIAN_AGENT_TYPE -u ROVODEV_CLI -u FM_OMP_HARNESS \
+  out=$(under_fixture "$bin" \
     "$bin/omp" -c 'bash "$1" 7 "$2"; :' _ "$dir/wrapper.sh" "$HARNESS")
   [ "$out" = omp ] || fail "markerless startup wrappers resolved '$out', expected omp"
   pass "fm-harness: startup wrappers preserve omp with and without inherited markers"
@@ -393,7 +410,7 @@ test_control_composer_and_model_tables() {
   local bin out
   bin=$(make_named_shells "$TMP_ROOT/named-model")
   # shellcheck disable=SC2016 # the quoted body expands inside the named shell
-  out=$(env -u CLAUDECODE -u FM_OMP_HARNESS -u PI_CODING_AGENT -u CURSOR_AGENT -u CURSOR_INVOKED_AS -u FM_SUPERVISION_MODEL \
+  out=$(under_fixture "$bin" \
     "$bin/omp" -c '. "$1"; fm_supervision_model' _ "$ROOT/bin/fm-wake-lib.sh")
   [ "$out" = extension ] || fail "an omp primary must run the extension supervision model, got '$out'"
   pass "control, composer, and supervision-model tables carry omp's verified values"
