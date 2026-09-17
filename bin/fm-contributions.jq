@@ -70,7 +70,6 @@ def projected($input; $saved; $now; $max_age):
          {actor:"unmeasured",reason:"unsupported forge; coverage is unmeasured"}
        elif $hold != null then {actor:"captain",reason:$hold.hold_reason,hold:$hold.id}
        elif ($record.pending | length) > 0 then {actor:"fleet",reason:"incoming maintainer signal needs triage"}
-       elif $settled then {actor:"nobody",reason:"forge reports merged"}
        elif $o.state == "merged" or $o.state == "closed" then
          if $fresh then {actor:"nobody",reason:("forge reports " + $o.state)}
          else {actor:"fleet",reason:"terminal observation needs refresh"} end

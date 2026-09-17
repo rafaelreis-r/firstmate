@@ -633,9 +633,28 @@ test_merged_retirement_preserves_feedback() {
   pass 'merged backlog ownership retires only after feedback acknowledgement'
 }
 
+test_merged_precedence_respects_live_hold() {
+  local home out
+  home=$(new_home merged-hold)
+  record "$home" held 12 merged mergeable '(hold: choose scope) (hold-kind: captain)'
+  record "$home" clear 13 merged mergeable
+  mutate_record "$home" held '.records[0].checked_at = "2026-09-01T00:00:00Z"'
+  mutate_record "$home" clear '.records[0].checked_at = "2026-09-01T00:00:00Z"'
+  out=$(bearings "$home") || fail 'Bearings could not read merged hold fixture'
+  printf '%s' "$out" | jq -e '
+    .contributions.known == 2 and .contributions.checked == 2
+    and .contributions.counts == {captain:1,fleet:0,maintainer:0,nobody:1}
+    and (.contributions.captain | length) == 1
+    and .contributions.captain[0].url == "https://github.com/o/r/pull/12"
+    and .contributions.captain[0].reason == "choose scope"
+    and .contributions.proven_clear == false' >/dev/null \
+    || fail "merged delivery must keep a live captain hold and otherwise need nobody: $out"
+  pass 'merged contribution yields to a live captain hold and is otherwise retired'
+}
+
 failures=0
 ( test_budget_timeout_differs_from_forge_timeout ) || failures=$((failures + 1))
-for test_name in test_budget_preserves_observation_and_progresses test_forge_failure_notifies_once_and_recovers test_merged_retirement_preserves_feedback; do
+for test_name in test_budget_preserves_observation_and_progresses test_forge_failure_notifies_once_and_recovers test_merged_retirement_preserves_feedback test_merged_precedence_respects_live_hold; do
   ( "$test_name" ) || failures=$((failures + 1))
 done
 for test_name in test_actor_coverage test_stale_verdict test_unchecked_is_not_silence test_newest_check_has_no_verdict test_comment_wake test_review_wake test_inline_wake test_ready_issue_wake test_fresh_issue_requires_maintainer test_missing_lane_remains_missing test_partial_freshness_keeps_measured_rows test_malformed_record_cannot_prove_silence test_issue_timeline_and_exact_ack test_verdict_retains_judged_head test_observed_replacement_refreshes_verdict test_unobserved_head_leaves_verdict_unknown test_away_yolo_is_fleet_work test_away_yolo_cross_home_is_fleet_work test_retired_and_unsupported_coverage test_unsupported_forge_is_not_fleet_work test_held_unsupported_forge_is_not_captain_work test_shared_contribution_signal_wakes_once test_watcher_keeps_diagnostics_separate_from_contribution_wakes test_expired_child_unsupported_forge_stays_unmeasured test_watcher_surfaces_new_contribution_once test_home_summary_coverage test_unreadable_pending_is_not_empty; do
