@@ -222,6 +222,7 @@ fm_herdr_cleanup_processes() { # <session> <comma-separated-panes>
     count=$((count + 1))
   done
   [ "$count" -ge 1 ] && [ "$count" -le 2 ] || return 1
+  [ -n "$idle" ] || return 1
   FM_HERDR_CLEANUP_FIRST_PANE=${sidebar:-$idle}
 }
 
