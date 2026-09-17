@@ -38,6 +38,11 @@
 # A changed API failure emits a diagnostic; recovery clears its stored error.
 # Merged PRs with no pending feedback or observation error stop polling, even
 # while retained backlog links still own them. Closed, unmerged work stays live.
+# A live captain hold or an unacknowledged maintainer signal outranks that
+# terminal state, so retirement never hides work someone still owes.
+# A retired row stays counted as checked and is left out of the projection's
+# validity floor, so a home whose owned work is all merged does not expire back
+# into fleet work.
 # FM_CONTRIBUTIONS_MAX_AGE (default 900 seconds) bounds live observation freshness.
 # FM_CONTRIBUTIONS_NOW supplies an ISO UTC clock for tests, otherwise UTC now.
 # FM_CONTRIBUTIONS_READY_LABEL selects the equivalent triage label, default
