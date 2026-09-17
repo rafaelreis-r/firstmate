@@ -45,6 +45,7 @@ set -u
 
 HARNESS="$ROOT/bin/fm-harness.sh"
 TMP_ROOT=$(fm_test_tmproot fm-omp-harness)
+BASE_PATH=${FM_TEST_BASE_PATH:-/usr/bin:/bin:/usr/sbin:/sbin}
 export NODE_NO_WARNINGS=1
 
 # A process whose kernel-recorded identity is the bare name `omp`: a SYMLINK to
@@ -53,19 +54,21 @@ export NODE_NO_WARNINGS=1
 # exact signal under test. Every `-c` body below ends in a no-op so bash does
 # not exec-optimize the single command away and replace the named process.
 make_named_shells() {  # <dir> -> echoes <bindir>
-  local dir=$1 name
+  local dir=$1 name real_ps
   mkdir -p "$dir"
   for name in omp ompd comp; do
     ln -sf /bin/bash "$dir/$name"
   done
+  real_ps=$(PATH="$BASE_PATH" command -v ps) ||
+    fail "the ancestry fixture needs a real ps on '$BASE_PATH'"
   # Keep real process identities, but stop both ancestry walks at the test shell.
   # The PATH shim prevents the harness launching this suite from becoming evidence.
-  cat > "$dir/ps" <<'SH'
+  cat > "$dir/ps" <<SH
 #!/usr/bin/env bash
-if [ "$*" = "-o ppid= -p $FM_TEST_ANCESTRY_ROOT" ]; then
+if [ "\$*" = "-o ppid= -p \$FM_TEST_ANCESTRY_ROOT" ]; then
   printf '%s\n' 0
 else
-  exec /bin/ps "$@"
+  exec "$real_ps" "\$@"
 fi
 SH
   chmod +x "$dir/ps"
@@ -75,7 +78,7 @@ SH
 under_fixture() {  # <bindir> [VAR=VAL ...] <command> [args...]
   local bin=$1
   shift
-  env -i HOME="$TMP_ROOT" PATH="$bin:/usr/bin:/bin:/usr/sbin:/sbin" \
+  env -i HOME="$TMP_ROOT" PATH="$bin:$BASE_PATH" \
     FM_TEST_ANCESTRY_ROOT="$$" "$@"
 }
 
