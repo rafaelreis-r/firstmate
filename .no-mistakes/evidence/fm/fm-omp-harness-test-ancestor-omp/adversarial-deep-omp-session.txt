@@ -1,0 +1,9 @@
+### Adversarial depth: the omp session sits FIVE levels above the suite,
+### not two - omp -> bash -> bash -> bash -> bash -> suite.
+
+--- BASE 83e4b56 ---
+exit=1 ok=0 notok=1
+not ok - 'ompd' merely contains omp and must not detect as omp
+
+--- TARGET 3c89d6b ---
+exit=0 ok=17 notok=0

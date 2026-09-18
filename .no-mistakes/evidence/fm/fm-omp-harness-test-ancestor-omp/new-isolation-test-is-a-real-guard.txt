@@ -1,0 +1,10 @@
+### Does test_isolation_hides_a_genuine_omp_ancestor itself catch a broken seam?
+CI condition: no omp session in the ancestry. Only that one test is invoked.
+
+--- UNMUTATED target 3c89d6b ---
+ok - fm-harness: the fixture boundary hides a genuine omp ancestor the unisolated walk finds
+exit=0
+
+--- MUTANT A2: bin/fm-harness.sh ignores FM_HARNESS_PS_BIN (hardcoded ps) ---
+not ok - the boundary must hide a genuine omp above the designated process, got 'omp'
+exit=1

@@ -1,0 +1,7 @@
+### FM_TEST_BASE_PATH knob: suite driven with ps/basename/tr living OUTSIDE /usr/bin:/bin
+$ FM_TEST_BASE_PATH=/tmp/fm-altbin.u1xVxd bash tests/fm-omp-harness.test.sh
+ok - fm-harness: omp detects by its anchored name; the marker is a precedence override that needs real omp ancestry
+ok - fm-harness: the fixture boundary hides a genuine omp ancestor the unisolated walk finds
+ok - fm-harness: startup wrappers preserve omp with and without inherited markers
+ok - session lock and tmux liveness: omp is anchored, decoys stay out
+exit=141

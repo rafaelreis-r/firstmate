@@ -1,0 +1,8 @@
+### The CI condition: NO omp session anywhere in the ancestry (how CI actually runs)
+
+--- MUTANT A (production ignores the seam) ---
+not ok - 'ompd' must leave no harness evidence, got 'claude'
+exit=1
+
+--- MUTANT B (seam kept, different ps argument form) ---
+exit=0  (passes=17, failures=0)

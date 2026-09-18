@@ -1,0 +1,4 @@
+### BEFORE (base 83e4b56): suite run INSIDE a simulated omp session
+$ $SESS/omp -c 'bash tests/fm-omp-harness.test.sh; :'   # omp is a real process 2 levels up
+not ok - 'ompd' merely contains omp and must not detect as omp
+exit=1

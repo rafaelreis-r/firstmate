@@ -1,0 +1,15 @@
+### Adversarial: host whose FM_TEST_BASE_PATH has no ps
+$ FM_TEST_BASE_PATH=<toolchain-without-ps> bash tests/fm-omp-harness.test.sh
+
+--- TARGET (3c89d6b) ---
+not ok - the ancestry fixtures need a real ps on '/tmp/fm-nops.MCmcby'
+exit=1
+
+--- BASE (83e4b56), same host condition, for contrast ---
+ok - fm-harness: omp detects by its anchored name; the marker is a precedence override that needs real omp ancestry
+ok - fm-harness: startup wrappers preserve omp with and without inherited markers
+ok - session lock and tmux liveness: omp is anchored, decoys stay out
+ok - fm-spawn: the omp launch line clears markers, pins posture, and wires the state-resident extension
+ok - fm-spawn: omp model validation is scoped to providers the listing can prove
+ok - fm-spawn: a real omp secondmate launch relies on auto-discovery while crewmates load one -e
+exit=141

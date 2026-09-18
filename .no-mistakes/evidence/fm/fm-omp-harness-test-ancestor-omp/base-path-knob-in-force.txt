@@ -1,0 +1,6 @@
+### Does the fixture actually resolve its toolchain from FM_TEST_BASE_PATH?
+Instrumented 'basename' planted only in the alternate dir; production's omp
+ancestry walk calls basename, so a non-zero count proves the knob is in force.
+
+BASE   83e4b56: suite exit=0 ; fixture processes resolved basename from FM_TEST_BASE_PATH 0 time(s)
+TARGET 3c89d6b: suite exit=0 ; fixture processes resolved basename from FM_TEST_BASE_PATH 133 time(s)

@@ -1,0 +1,6 @@
+### Repeatability: the omp suite driven three more times inside the omp session,
+### plus once outside, to check the new fixture is not order- or timing-flaky.
+inside-omp run 1: exit=0 ok=17 notok=0
+inside-omp run 2: exit=0 ok=17 notok=0
+inside-omp run 3: exit=0 ok=17 notok=0
+outside-omp run: exit=0 ok=17 notok=0

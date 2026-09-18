@@ -1,0 +1,14 @@
+### The FM_HARNESS_PS_BIN seam at the CLI, driven by hand
+
+1) unset  -> the default 'ps'; a real omp parent is seen
+   $ $NAMED/omp -c fm-harness.sh   ->  omp
+
+2) empty  -> :- default keeps the real 'ps'; behaviour identical to (1)
+   $ FM_HARNESS_PS_BIN= ... ->  omp
+
+3) a ps that reports parent 0 at the caller -> the walk stops, no ancestry evidence
+   $ FM_HARNESS_PS_BIN=$STOP/ps ... ->  
+
+4) adversarial: the seam points at a path that does not exist
+   $ FM_HARNESS_PS_BIN=/nonexistent/ps ... ->  detect=unknown exit=0
+   (degrades to a marker-only verdict; no crash, no hang)

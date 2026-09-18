@@ -1,0 +1,23 @@
+### Production detection parity: base 83e4b56 vs target 3c89d6b, FM_HARNESS_PS_BIN unset
+
+--- BASE ---
+under omp          detect     -> omp
+under omp          ancestry   -> comm omp
+under ompd         detect     -> claude
+under ompd         ancestry   -> comm claude
+under comp         detect     -> claude
+under comp         ancestry   -> comm claude
+plain bash         detect     -> claude
+plain bash         ancestry   -> comm claude
+inside omp sess    detect     -> omp
+
+--- TARGET ---
+under omp          detect     -> omp
+under omp          ancestry   -> comm omp
+under ompd         detect     -> claude
+under ompd         ancestry   -> comm claude
+under comp         detect     -> claude
+under comp         ancestry   -> comm claude
+plain bash         detect     -> claude
+plain bash         ancestry   -> comm claude
+inside omp sess    detect     -> omp

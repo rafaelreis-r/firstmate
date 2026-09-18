@@ -1,0 +1,20 @@
+### AFTER (target 3c89d6b): same suite, same simulated omp session
+$ $SESS/omp -c 'bash tests/fm-omp-harness.test.sh; :'   # omp is a real process 2 levels up
+ok - fm-harness: omp detects by its anchored name; the marker is a precedence override that needs real omp ancestry
+ok - fm-harness: the fixture boundary hides a genuine omp ancestor the unisolated walk finds
+ok - fm-harness: startup wrappers preserve omp with and without inherited markers
+ok - session lock and tmux liveness: omp is anchored, decoys stay out
+ok - fm-spawn: the omp launch line clears markers, pins posture, and wires the state-resident extension
+ok - fm-spawn: omp model validation is scoped to providers the listing can prove
+ok - fm-spawn: a real omp secondmate launch relies on auto-discovery while crewmates load one -e
+ok - fm-spawn: the config/secondmate-harness model pin is validated against the omp catalog before launch
+ok - omp extension: agent_start busy, willContinue stays busy, plain agent_end idle, turn_end a notification
+ok - control, composer, and supervision-model tables carry omp's verified values
+ok - fm-wake-lib: the omp ownership proof is keyed on its own extensions and gates the hand-off tolerance
+ok - .omp turn-end guard: digest delivery, seatbelt block, one compelled continuation, flagged stop stands down
+ok - .omp watch extension: a live actionable cohort shares one doorbell, preserves durable events, and restores continuity
+ok - .omp watch extension: replacement backlog shares one doorbell and a later close wakes again after consumption
+ok - .omp watch extension: a retry after a failed cycle arms as a cold start, so the next child can reopen the recovery marker
+ok - .omp watch extension: cycles that only recover and resurface still reach the retry limit and surface the typed failure
+ok - .omp watch extension: a genuine wake between failed cycles clears the consecutive-failure count
+exit=0

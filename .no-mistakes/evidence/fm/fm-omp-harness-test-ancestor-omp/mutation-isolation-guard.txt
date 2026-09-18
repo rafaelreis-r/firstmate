@@ -1,0 +1,17 @@
+### Mutation testing: is the isolation test a real guard or a passthrough?
+Both mutants are the target tree with bin/fm-harness.sh altered; suite unchanged.
+
+MUTANT A - production ignores FM_HARNESS_PS_BIN (hardcoded ps).
+Expected: the isolation test turns RED, because the boundary can no longer be reached.
+--- mutant A ---
+not ok - 'ompd' must leave no harness evidence, got 'omp'
+(run inside the simulated omp session)
+
+MUTANT B - seam kept, walk switched to 'ps -p <pid> -o ppid=' (different argument form).
+Expected: suite stays GREEN, because the boundary is no longer coupled to the exact ps form.
+--- mutant B ---
+ok - fm-harness: omp detects by its anchored name; the marker is a precedence override that needs real omp ancestry
+ok - fm-harness: the fixture boundary hides a genuine omp ancestor the unisolated walk finds
+ok - fm-harness: startup wrappers preserve omp with and without inherited markers
+(run inside the simulated omp session)
+
