@@ -55,6 +55,11 @@
 # detect_own is the single owner of how the two combine; harness_marker and
 # harness_ancestry only report evidence. Record each newly verified env marker
 # in harness_marker, and each newly verified command name in harness_ancestry.
+# The upward walks read process identity through "${FM_HARNESS_PS_BIN:-ps}", the
+# same overridable-binary seam bin/backends/herdr.sh spells FM_HERDR_PS_BIN.
+# Production leaves it unset; tests/fm-omp-harness.test.sh owns why a fixture
+# points it at a stand-in ps, so route a new upward-walk ps call through it.
+# process_descent_path searches downward and stays outside the seam.
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
