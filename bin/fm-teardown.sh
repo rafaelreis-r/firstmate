@@ -3528,6 +3528,27 @@ if [ "$BACKEND" = herdr ]; then
     exit 1
   fi
 fi
+# The task's own pane is proven gone above, but Herdr drops a tab only when its
+# LAST pane closes, so anything else docked into this task's tab - a Herdr
+# plugin pane, an operator split - keeps the whole tab alive, and the records
+# removed below are the last thing that names it. Close the exact recorded tab
+# while the session lock still covers this teardown. A failed close only leaves
+# that tab in place: the endpoint proof above is what governs record removal,
+# and nothing here may change that verdict.
+if [ "$BACKEND" = herdr ] && declare -F fm_backend_herdr_recorded_tab_close >/dev/null 2>&1; then
+  HERDR_RECLAIM_SESSION=$(meta_value "$META" herdr_session)
+  [ -n "$HERDR_RECLAIM_SESSION" ] || HERDR_RECLAIM_SESSION=$TEARDOWN_HERDR_SESSION
+  HERDR_RECLAIM_WORKSPACE=$(meta_value "$META" herdr_workspace_id)
+  HERDR_RECLAIM_TAB=$(meta_value "$META" herdr_tab_id)
+  if [ -z "$HERDR_RECLAIM_WORKSPACE" ] || [ -z "$HERDR_RECLAIM_TAB" ]; then
+    :
+  elif teardown_herdr_session_lock_held "$HERDR_RECLAIM_SESSION"; then
+    fm_backend_herdr_recorded_tab_close \
+      "$HERDR_RECLAIM_SESSION" "$HERDR_RECLAIM_WORKSPACE" "$HERDR_RECLAIM_TAB" || true
+  else
+    echo "warning: herdr session presentation lock is unavailable; leaving $ID's tab in place rather than closing it unlocked" >&2
+  fi
+fi
 if [ "$KIND" != secondmate ]; then
   if ! FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" FM_DATA_OVERRIDE="$DATA" \
       "$SCRIPT_DIR/fm-inactive-reconcile.sh" report "$ID"; then

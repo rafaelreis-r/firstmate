@@ -110,9 +110,11 @@ The token is visible in the workspace title because Herdr exposes no verified hi
 The owning parent is the launcher's own exact workspace, resolved from the same identity the flat path uses, and falls back to a unique home-label lookup only for a Firstmate outside Herdr.
 Projected children are never collapsed back into that parent; it is the placement and ordering reference the projection is bound under.
 The normal `fm-<id>` task tab is created in the exact new workspace returned by Herdr.
-Only the exact seeded default tab returned by the same workspace-create response can be pruned.
+Only the exact seeded default tab returned by the same workspace-create response can be pruned, and the prune finishes on that tab id rather than on its root pane, because a plugin can dock a pane into the seeded tab too.
 Before and after create, prune, order, abort cleanup, and normal cleanup, Firstmate verifies exact workspace, tab, pane, and active-focus ids.
 An ambiguous response grants no mutation or cleanup authority.
+A projection has converged when this attempt's own task tab and task pane carry the ids Herdr returned for them and the seeded tab is gone.
+The shape check counts nothing: a pane Firstmate never created, such as the one a docking plugin puts into every tab, used to fail an otherwise perfect projection, which is why a first projected spawn failed while a byte-identical retry succeeded.
 
 Protocol 16 exposes `workspace.move` over the named session socket but no CLI subcommand.
 `bin/backends/herdr-workspace-move.py` sends only that whitelisted method and verifies the complete returned workspace order.
@@ -125,7 +127,11 @@ Firstmate does not retry, adopt, reuse, close, delete, or rename anything in res
 The worker remains on the ordinary flat or Herdr-current-order path.
 
 Normal task metadata remains the sole endpoint authority after creation.
-Cleanup closes only the exact recorded task pane and never calls `workspace close`.
+Cleanup closes the exact recorded task pane, then closes that task's exact recorded tab, and never calls `workspace close`.
+Herdr removes a tab only when its last pane closes, so anything else docked into the task tab - a plugin pane such as the herdr-sidebar plugin's, an operator split - kept the tab, and a projected task's whole disposable workspace, alive after the records naming them were gone.
+The tab close is unconditional once the recorded tab is still a tab of the recorded workspace: a close conditioned on what sits in the tab restores that residue in exactly the cases where it declines, so a pane parked in a task tab dies with the task.
+It is still focus-preserving - the shared mutation guard refuses while a live foreground client is viewing that tab, and the exact prior tab is restored afterwards - and a close that cannot be proved never relaxes the endpoint proof cleanup requires before removing any durable record.
+An aborted projected attempt closes the exact tabs that attempt created, for the same reason.
 Herdr 0.7.5's explicit close moves focus to a neighbor whenever it empties a non-focused workspace, while its pane-death removal preserves the focused workspace whenever the dying workspace sits behind it or the focused workspace is last; both behaviors are fixed in Herdr 0.8.0, and the exact rules live in the adapter header of `bin/backends/herdr.sh`.
 Projected cleanup therefore runs under the same session lock, refuses to delete the tab a live foreground client is viewing, and treats a workspace-emptying close as a focus-safe removal: it verifies the close would empty the workspace, repositions the doomed workspace behind the focused one through the verified `workspace.move` transport when needed, proves the pane holds one lone idle shell, and ends that shell so Herdr removes the emptied workspace through its focus-preserving pane-death path.
 The persisted `.focused` pointer is not a live viewer: when `herdr terminal title clear` reports `no_foreground_client`, cleanup proceeds on that tab because no human is attached and skips restoration of the tab it destroys.
@@ -367,6 +373,7 @@ tests/fm-backend-herdr-workspace-per-home-e2e.test.sh
 tests/fm-backend-herdr-launcher-workspace-e2e.test.sh
 tests/fm-backend-herdr-presentation-e2e.test.sh
 tests/fm-backend-herdr-agent-exit-shell-e2e.test.sh
+tests/fm-backend-herdr-tab-residue-e2e.test.sh
 tests/fm-herdr-pi-stale-registration-live-e2e.test.sh
 tests/fm-backend-herdr-eventwait-smoke.test.sh
 tests/fm-control-herdr-smoke.test.sh

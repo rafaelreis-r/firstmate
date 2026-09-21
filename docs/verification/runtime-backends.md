@@ -925,6 +925,26 @@ The CLI matrix was checked directly:
 All destructive verification used `bin/fm-herdr-lab.sh` with a non-default `fm-lab-` name and a byte-identical default-session tripwire.
 No ambient `herdr server stop` command is a supported test operation.
 
+### A task tab outlives a pane-only close whenever anything else is docked in it
+
+Measured 2026-09-21 on macOS 26 (Darwin 25.6.0) aarch64 against Herdr 0.9.0 in an `fm-lab-` session, the guarantee behind teardown's exact recorded tab close (`fm_backend_herdr_recorded_tab_close`).
+A tab disappears with its last pane, and only with its last pane:
+
+```text
+herdr tab create --workspace w1 --cwd /tmp --label fm-leak-1 --no-focus
+  -> {"tab":"w1:t2","root_pane":"w1:p3"}
+herdr pane list --workspace w1   (0.5 s later)
+  -> [{"pane":"w1:p4","tab":"w1:t2","label":"Sidebar"},{"pane":"w1:p3","tab":"w1:t2"}]
+herdr pane close w1:p3           (the exact registered task pane)
+  -> pane w1:p3 reports pane_not_found; tab w1:t2 remains with pane_count 1 and agent_status unknown
+```
+
+The second pane above is not Firstmate's: the `herdr-sidebar` 0.11.0 plugin docks one labelled `Sidebar`, carrying `tokens.herdr-sidebar-explorer`, into every tab within about a second of its creation, and `herdr pane split` produces the same shape with no plugin installed.
+Closing the sidebar pane first and then the registered pane removes the tab, so the docked pane is the whole difference.
+A pane docked into a projected task's tab keeps its disposable workspace alive for the same reason, and counting it also failed the projection's former one-task-pane convergence check, which is why a first projected spawn failed while a byte-identical retry succeeded.
+On this machine the `herdr-automatic-rename` 0.9.1 plugin renames the seeded default tab (observed `[1] project › sh`) before the projection can prune it, so a converged projection is unobservable here at all; the identity-based shape check was measured against the real `fm_backend_herdr_projection_create_task` with only that environment-blocked prune substituted, returning 0 with a docked pane present where the counting check returned 1.
+`tests/fm-backend-herdr-tab-residue-e2e.test.sh` is the command that refreshes this evidence; its projection case reports that rename as a skip rather than a verdict.
+
 ### fm-remote server birth and login-keychain access
 
 Measured 2026-09-09 on macOS 26 (Darwin 25.6.0) aarch64 with Claude Code 2.1.266 and Herdr 0.9.0, the guarantee behind `bin/fm-remote-herdr-guard.sh` and the doctor's `herdr-server` check: login-keychain access follows the audit session a process was born into, never the launch shape or the shell.
