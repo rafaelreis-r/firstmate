@@ -2043,6 +2043,8 @@ case "\${1:-} \${2:-}" in
   "workspace list")
     if [ "\${FM_FAKE_HERDR_WORKSPACE_LIST_GARBAGE:-0}" = 1 ]; then
       printf '%s\n' 'not-json'
+    elif [ "\${FM_FAKE_HERDR_RENAMED_WORKSPACE:-0}" = 1 ]; then
+      printf '%s\n' '{"result":{"workspaces":[{"workspace_id":"wH","active_tab_id":"wH:t1","label":"firstmate","focused":true},{"workspace_id":"wG","active_tab_id":"wG:tQ","label":"renamed projection","focused":false}]}}'
     elif [ "\${FM_FAKE_HERDR_PROJECTED_WORKSPACE:-0}" = 1 ]; then
       printf '%s\n' '{"result":{"workspaces":[{"workspace_id":"wH","active_tab_id":"wH:t1","label":"firstmate","focused":true},{"workspace_id":"wG","active_tab_id":"wG:tQ","label":"└ task-x1 · p:AbCdEfGhIjKlMnOpQrStUv","focused":false}]}}'
     else
@@ -2101,6 +2103,24 @@ case "\${1:-} \${2:-}" in
 esac
 SH
   chmod +x "$case_dir/fakebin/herdr"
+}
+
+write_herdr_projection_journal_v2() {  # <case-dir> <workspace-id> <projection-id>
+  local case_dir=$1 workspace=$2 token=$3
+  printf '%s\n' \
+    'version=2' \
+    'task_id=task-x1' \
+    "projection_id=$token" \
+    "home=$case_dir" \
+    'session=default' \
+    "workspace_id=$workspace" \
+    "tab_id=$workspace:t1" \
+    "pane_id=$workspace:p1" \
+    'parent_workspace_id=wH' \
+    'parent_label=firstmate' \
+    "workspace_label=└ task-x1 · p:$token" \
+    'task_label=fm-task-x1' \
+    > "$case_dir/state/task-x1.herdr-presentation"
 }
 
 test_herdr_flat_teardown_refuses_orphaning_records_then_retry_completes() {
@@ -2229,14 +2249,43 @@ test_herdr_flat_teardown_retains_records_when_tab_close_is_unconfirmed() {
   pass "herdr flat teardown retains every durable record when its recorded tab close is unconfirmed"
 }
 
+test_herdr_flat_teardown_refuses_tab_close_without_focus_snapshot() {
+  local case_dir log closed rc record
+  case_dir=$(make_case herdr-tab-focus-unknown)
+  write_meta "$case_dir" local-only ship
+  configure_flat_herdr_teardown_case "$case_dir"
+  log="$case_dir/herdr.log"; : > "$log"
+  closed="$case_dir/closed"
+  : > "$case_dir/state/task-x1.status"
+  : > "$case_dir/state/task-x1.turn-ended"
+
+  rc=0
+  FM_FAKE_HERDR_LOG="$log" FM_FAKE_HERDR_CLOSED="$closed" \
+    FM_FAKE_HERDR_WORKSPACE_LIST_GARBAGE=1 FM_BACKEND_HERDR_IDLE_SHELL_PROOF_POLLS=1 \
+    run_teardown "$case_dir" --force > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+  [ "$rc" -ne 0 ] \
+    || fail "herdr-tab-focus-unknown: teardown closed a tab without a readable focus snapshot"
+  [ -e "$closed" ] || fail "herdr-tab-focus-unknown: fixture did not confirm the registered pane close"
+  [ ! -e "$closed.tab" ] \
+    || fail "herdr-tab-focus-unknown: unreadable focus still authorized the recorded-tab close"
+  assert_not_contains "$(cat "$log")" "tab close wG:tQ" \
+    "herdr-tab-focus-unknown: teardown attempted a recorded-tab close without focus proof"
+  for record in task-x1.meta task-x1.status task-x1.turn-ended; do
+    [ -e "$case_dir/state/$record" ] \
+      || fail "herdr-tab-focus-unknown: focus refusal erased $record"
+  done
+  assert_grep "could not capture exact active workspace and tab" "$case_dir/stderr" \
+    "herdr-tab-focus-unknown: refusal did not explain the missing focus proof"
+  pass "herdr recorded-tab cleanup refuses without an exact focus snapshot"
+}
+
 test_herdr_quarantined_journal_reclaims_only_operator_workspace_tab() {
   local case_dir log closed rc record quarantined_token=ZbCdEfGhIjKlMnOpQrStUv
 
   case_dir=$(make_case herdr-quarantine-operator-workspace)
   write_meta "$case_dir" local-only ship
   configure_flat_herdr_teardown_case "$case_dir"
-  printf 'version=1\ntask_id=task-x1\nprojection_id=%s\n' "$quarantined_token" \
-    > "$case_dir/state/task-x1.herdr-presentation"
+  write_herdr_projection_journal_v2 "$case_dir" wP "$quarantined_token"
   log="$case_dir/herdr.log"; : > "$log"; closed="$case_dir/closed"
   FM_FAKE_HERDR_LOG="$log" FM_FAKE_HERDR_CLOSED="$closed" \
     FM_BACKEND_HERDR_IDLE_SHELL_PROOF_POLLS=1 \
@@ -2250,11 +2299,10 @@ test_herdr_quarantined_journal_reclaims_only_operator_workspace_tab() {
   case_dir=$(make_case herdr-quarantine-projection-workspace)
   write_meta "$case_dir" local-only ship
   configure_flat_herdr_teardown_case "$case_dir"
-  printf 'version=1\ntask_id=task-x1\nprojection_id=%s\n' "$quarantined_token" \
-    > "$case_dir/state/task-x1.herdr-presentation"
+  write_herdr_projection_journal_v2 "$case_dir" wG "$quarantined_token"
   log="$case_dir/herdr.log"; : > "$log"; closed="$case_dir/closed"
   FM_FAKE_HERDR_LOG="$log" FM_FAKE_HERDR_CLOSED="$closed" \
-    FM_FAKE_HERDR_PROJECTED_WORKSPACE=1 FM_BACKEND_HERDR_IDLE_SHELL_PROOF_POLLS=1 \
+    FM_FAKE_HERDR_RENAMED_WORKSPACE=1 FM_BACKEND_HERDR_IDLE_SHELL_PROOF_POLLS=1 \
     run_teardown "$case_dir" --force > "$case_dir/stdout" 2> "$case_dir/stderr" \
     || fail "herdr-quarantine-projection-workspace: teardown failed: $(cat "$case_dir/stderr")"
   [ ! -e "$closed.tab" ] \
@@ -2274,19 +2322,21 @@ test_herdr_quarantined_journal_reclaims_only_operator_workspace_tab() {
   log="$case_dir/herdr.log"; : > "$log"; closed="$case_dir/closed"
   rc=0
   FM_FAKE_HERDR_LOG="$log" FM_FAKE_HERDR_CLOSED="$closed" \
-    FM_FAKE_HERDR_WORKSPACE_LIST_GARBAGE=1 FM_BACKEND_HERDR_IDLE_SHELL_PROOF_POLLS=1 \
+    FM_BACKEND_HERDR_IDLE_SHELL_PROOF_POLLS=1 \
     run_teardown "$case_dir" --force > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
   [ "$rc" -ne 0 ] \
-    || fail "herdr-quarantine-unknown-workspace: teardown accepted an unreadable workspace classification"
+    || fail "herdr-quarantine-unknown-workspace: teardown accepted a journal without exact workspace identity"
   [ ! -e "$closed.tab" ] \
-    || fail "herdr-quarantine-unknown-workspace: teardown closed a tab after an unreadable workspace classification"
+    || fail "herdr-quarantine-unknown-workspace: teardown closed a tab without exact journal workspace identity"
   assert_not_contains "$(cat "$log")" "tab close wG:tQ" \
-    "herdr-quarantine-unknown-workspace: teardown attempted a tab close after an unreadable classification"
+    "herdr-quarantine-unknown-workspace: teardown attempted a tab close without journal identity"
   for record in task-x1.meta task-x1.status task-x1.turn-ended task-x1.herdr-presentation; do
     [ -e "$case_dir/state/$record" ] \
-      || fail "herdr-quarantine-unknown-workspace: unreadable classification erased $record"
+      || fail "herdr-quarantine-unknown-workspace: missing journal identity erased $record"
   done
-  pass "herdr quarantine distinguishes operator, projection, and unreadable workspaces"
+  assert_grep "journal fields session and workspace_id" "$case_dir/stderr" \
+    "herdr-quarantine-unknown-workspace: refusal did not name the missing journal identities"
+  pass "herdr quarantine follows recorded workspace identity despite live label changes"
 }
 
 assert_herdr_teardown_preflight_refuses_before_changes() {
@@ -3892,6 +3942,7 @@ test_herdr_teardown_clears_escalation_marker
 test_herdr_flat_teardown_refuses_orphaning_records_then_retry_completes
 test_herdr_flat_teardown_refuses_records_on_unparseable_presence
 test_herdr_flat_teardown_retains_records_when_tab_close_is_unconfirmed
+test_herdr_flat_teardown_refuses_tab_close_without_focus_snapshot
 test_herdr_quarantined_journal_reclaims_only_operator_workspace_tab
 test_herdr_flat_teardown_preflight_refuses_before_changes
 test_forced_secondmate_herdr_child_preflight_refuses_before_changes

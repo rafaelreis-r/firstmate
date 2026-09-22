@@ -140,7 +140,7 @@
 # exact task pane, confirms it gone, then closes the exact recorded tab so any
 # sibling panes in that task container cannot survive record removal. It never
 # calls `workspace close`. A quarantined projected workspace remains untouched;
-# an unreadable workspace classification retains every durable task record.
+# an unreadable recorded identity retains every durable task record.
 # The journal retires only after both recorded endpoint levels are confirmed
 # gone. Otherwise it stays quarantined for manual inspection.
 # Projected closes share the presentation-order lock, refuse to close the
@@ -3039,34 +3039,26 @@ endpoint_close_refusal() {  # <subject> <backend> <target> <honors-force>
   return 1
 }
 
-teardown_herdr_recorded_tab() {  # <meta> <subject> <journal> <retire-candidate> <fallback-session>
-  local meta=$1 subject=$2 journal=$3 retire_candidate=$4 fallback_session=$5
-  local session workspace tab presence projection_state
+teardown_herdr_recorded_tab() {  # <meta> <id> <subject> <journal> <retire-candidate> <fallback-session>
+  local meta=$1 id=$2 subject=$3 journal=$4 retire_candidate=$5 fallback_session=$6
+  local session workspace tab projection_state
   session=$(meta_value "$meta" herdr_session)
   [ -n "$session" ] || session=$fallback_session
   workspace=$(meta_value "$meta" herdr_workspace_id)
   tab=$(meta_value "$meta" herdr_tab_id)
-  [ -n "$workspace" ] && [ -n "$tab" ] || return 0
   if [ "$retire_candidate" != 1 ] && { [ -e "$journal" ] || [ -L "$journal" ]; }; then
-    presence=$(fm_backend_herdr_tab_presence_state "$session" "$workspace" "$tab")
-    case "$presence" in
-      dead) return 0 ;;
-      present) ;;
-      *)
-        echo "error: herdr tab $tab for $subject cannot be classified under its quarantined presentation; retaining every durable task record" >&2
-        return 1
-        ;;
-    esac
-    projection_state=$(fm_backend_herdr_workspace_projection_state "$session" "$workspace")
+    projection_state=$(fm_backend_herdr_projection_journal_workspace_state \
+      "$journal" "$id" "$session" "$workspace")
     case "$projection_state" in
       projection) return 0 ;;
       ordinary) ;;
       *)
-        echo "error: herdr workspace $workspace for $subject cannot be classified under its quarantined presentation; retaining every durable task record" >&2
+        echo "error: herdr presentation journal for $subject cannot establish exact ownership because journal fields session and workspace_id or metadata fields herdr_session and herdr_workspace_id are missing or invalid; retaining every durable task record" >&2
         return 1
         ;;
     esac
   fi
+  [ -n "$workspace" ] && [ -n "$tab" ] || return 0
   if ! teardown_herdr_session_lock_held "$session"; then
     echo "error: herdr session presentation lock is unavailable; retaining every durable task record so $subject's tab close can be retried" >&2
     return 1
@@ -3129,7 +3121,7 @@ cleanup_firstmate_home_children() {
           echo "warning: herdr presentation journal for $child_id remains quarantined; no workspace cleanup was attempted" >&2
         fi
         teardown_herdr_recorded_tab \
-          "$child_meta" "child $child_id" "$child_journal" "$child_retire_candidate" "$child_session" \
+          "$child_meta" "$child_id" "child $child_id" "$child_journal" "$child_retire_candidate" "$child_session" \
           || return 1
         if [ "$child_retire_candidate" = 1 ]; then
           rm -f "$child_journal"
@@ -3594,11 +3586,11 @@ fi
 # removed below are the last thing that names it. Close the exact recorded tab
 # while the session lock still covers this teardown. A failed close retains the
 # records that name the tab so a plain rerun can retry it. A quarantined journal
-# blocks this close only when the recorded workspace itself has a projection
-# label; an ordinary operator workspace still needs its leaked task tab reaped.
+# blocks this close only when its exact session and workspace match the task's
+# recorded workspace; a different operator workspace still has its tab reaped.
 if [ "$BACKEND" = herdr ] && declare -F fm_backend_herdr_recorded_tab_close >/dev/null 2>&1; then
   if ! teardown_herdr_recorded_tab \
-    "$META" "$ID" "$HERDR_PRESENTATION_JOURNAL" "$HERDR_PRESENTATION_RETIRE_CANDIDATE" "$TEARDOWN_HERDR_SESSION"; then
+    "$META" "$ID" "$ID" "$HERDR_PRESENTATION_JOURNAL" "$HERDR_PRESENTATION_RETIRE_CANDIDATE" "$TEARDOWN_HERDR_SESSION"; then
     exit 1
   fi
   if [ "$HERDR_PRESENTATION_RETIRE_CANDIDATE" = 1 ]; then

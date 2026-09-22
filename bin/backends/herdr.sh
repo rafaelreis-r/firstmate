@@ -2686,12 +2686,12 @@ fm_backend_herdr_recorded_tab_close() {  # <session> <workspace-id> <tab-id>
       return 1
       ;;
   esac
-  before=$(fm_backend_herdr_projection_focus_snapshot "$session") || before=
+  before=$(fm_backend_herdr_projection_focus_snapshot "$session") || {
+    echo "warning: herdr task-tab cleanup could not capture exact active workspace and tab; refusing focus-unsafe tab close" >&2
+    return 1
+  }
   fm_backend_herdr_projection_target_tab_mutation_allowed "$session" "$tab" || return 1
   [ -z "${FM_BACKEND_HERDR_PROJECTION_MUTATION_FOCUS:-}" ] || before=$FM_BACKEND_HERDR_PROJECTION_MUTATION_FOCUS
-  # A tab cannot be restored to focus once it is closed, and a snapshot that
-  # was never unambiguous is no restore target either.
-  [ -n "$before" ] || skip_restore=1
   case "$before" in
     *$'\t'"$tab") skip_restore=1 ;;
   esac
@@ -2706,23 +2706,22 @@ fm_backend_herdr_recorded_tab_close() {  # <session> <workspace-id> <tab-id>
   return 0
 }
 
-fm_backend_herdr_workspace_projection_state() {  # <session> <workspace-id>
-  local session=$1 workspace=$2 list state
-  [ -n "$session" ] && [ -n "$workspace" ] || { printf 'unknown'; return 0; }
-  list=$(fm_backend_herdr_cli "$session" workspace list 2>/dev/null) \
+fm_backend_herdr_projection_journal_workspace_state() {  # <journal> <task-id> <session> <workspace-id>
+  local journal=$1 id=$2 session=$3 workspace=$4
+  fm_backend_herdr_projection_journal_snapshot "$journal" "$id" \
     || { printf 'unknown'; return 0; }
-  state=$(printf '%s' "$list" | jq -r --arg workspace "$workspace" '
-    select((.result.workspaces | type) == "array")
-    | [.result.workspaces[] | select(.workspace_id == $workspace)]
-    | if length != 1 or (.[0].label | type) != "string" then "unknown"
-      elif (.[0].label | test(" · p:[A-Za-z0-9_-]{22}$")) then "projection"
-      else "ordinary"
-      end
-  ' 2>/dev/null) || state=unknown
-  case "$state" in
-    projection|ordinary) printf '%s' "$state" ;;
-    *) printf 'unknown' ;;
-  esac
+  if [ "$FM_BACKEND_HERDR_JOURNAL_VERSION" != 2 ] \
+     || [ -z "$FM_BACKEND_HERDR_JOURNAL_SESSION" ] \
+     || [ -z "$FM_BACKEND_HERDR_JOURNAL_WORKSPACE_ID" ] \
+     || [ -z "$session" ] \
+     || [ -z "$workspace" ]; then
+    printf 'unknown'
+  elif [ "$FM_BACKEND_HERDR_JOURNAL_SESSION" = "$session" ] \
+       && [ "$FM_BACKEND_HERDR_JOURNAL_WORKSPACE_ID" = "$workspace" ]; then
+    printf 'projection'
+  else
+    printf 'ordinary'
+  fi
 }
 
 # fm_backend_herdr_projection_cleanup_exact: same-process abort cleanup for a
