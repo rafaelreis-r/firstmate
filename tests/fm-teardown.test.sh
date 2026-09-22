@@ -2438,13 +2438,19 @@ case "\${1:-} \${2:-}" in
     fi
     ;;
   "workspace list")
-    printf '%s\n' '{"result":{"workspaces":[{"workspace_id":"wH","active_tab_id":"wH:t1","label":"captain","focused":true},{"workspace_id":"wC","active_tab_id":"wC:t1","label":"2ndmate-task-x1","focused":false}]}}'
+    if [ "\${FM_FAKE_HERDR_CHILD_RENAMED:-0}" = 1 ]; then
+      printf '%s\n' '{"result":{"workspaces":[{"workspace_id":"wH","active_tab_id":"wH:t1","label":"captain","focused":true},{"workspace_id":"wC","active_tab_id":"wC:t1","label":"renamed child projection","focused":false}]}}'
+    else
+      printf '%s\n' '{"result":{"workspaces":[{"workspace_id":"wH","active_tab_id":"wH:t1","label":"captain","focused":true},{"workspace_id":"wC","active_tab_id":"wC:t1","label":"2ndmate-task-x1","focused":false}]}}'
+    fi
     ;;
   "tab list")
     case "\$*" in
       *"--workspace wH"*) printf '%s\n' '{"result":{"tabs":[{"tab_id":"wH:t1","workspace_id":"wH","focused":true}]}}' ;;
       *"--workspace wC"*)
-        if [ -e "\${FM_FAKE_HERDR_CLOSED:?}.tab" ]; then
+        if [ -e "\${FM_FAKE_HERDR_CLOSED:?}.tab" ] \
+           || { [ "\${FM_FAKE_HERDR_CHILD_TAB_DIES_WITH_PANE:-0}" = 1 ] \
+             && [ -e "\${FM_FAKE_HERDR_CLOSED:?}" ]; }; then
           printf '%s\n' '{"result":{"tabs":[]}}'
         else
           printf '%s\n' '{"result":{"tabs":[{"tab_id":"wC:t1","workspace_id":"wC","focused":false}]}}'
@@ -2473,6 +2479,24 @@ case "\${1:-} \${2:-}" in
 esac
 SH
   chmod +x "$case_dir/fakebin/herdr"
+}
+
+write_child_herdr_projection_journal_v2() {  # <case-dir> <projection-id>
+  local case_dir=$1 token=$2 home="$1/secondmate-home"
+  printf '%s\n' \
+    'version=2' \
+    'task_id=child-herdr' \
+    "projection_id=$token" \
+    "home=$home" \
+    'session=childsession' \
+    'workspace_id=wC' \
+    'tab_id=wC:t1' \
+    'pane_id=wC:p1' \
+    'parent_workspace_id=wH' \
+    'parent_label=captain' \
+    "workspace_label=└ child-herdr · p:$token" \
+    'task_label=fm-child-herdr' \
+    > "$home/state/child-herdr.herdr-presentation"
 }
 
 test_forced_secondmate_herdr_child_preflight_refuses_before_changes() {
@@ -2639,6 +2663,51 @@ test_forced_secondmate_herdr_child_reclaims_recorded_tab() {
   [ ! -e "$case_dir/state/task-x1.meta" ] \
     || fail "herdr-child-recorded-tab: successful cleanup retained the parent record"
   pass "forced secondmate cleanup reclaims a child tab containing a sibling pane"
+}
+
+test_forced_secondmate_herdr_child_preserves_quarantined_journal() {
+  local case_dir home log closed rc token=AbCdEfGhIjKlMnOpQrStUv
+  case_dir=$(make_case herdr-child-quarantined-live-tab)
+  write_meta "$case_dir" local-only secondmate
+  configure_secondmate_with_herdr_child "$case_dir"
+  write_child_herdr_projection_journal_v2 "$case_dir" "$token"
+  home="$case_dir/secondmate-home"
+  log="$case_dir/herdr.log"; closed="$case_dir/closed"; : > "$log"
+
+  rc=0
+  FM_FAKE_HERDR_LOG="$log" FM_FAKE_HERDR_CLOSED="$closed" \
+    FM_FAKE_HERDR_CHILD_RENAMED=1 FM_BACKEND_HERDR_IDLE_SHELL_PROOF_POLLS=1 \
+    run_teardown "$case_dir" --force > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+  [ "$rc" -ne 0 ] \
+    || fail "herdr-child-quarantined-live-tab: forced cleanup deleted a home with a surviving quarantine journal"
+  [ -d "$home" ] || fail "herdr-child-quarantined-live-tab: refusal removed the secondmate home"
+  [ -e "$home/state/child-herdr.meta" ] \
+    || fail "herdr-child-quarantined-live-tab: refusal erased child metadata"
+  [ -e "$home/state/child-herdr.status" ] \
+    || fail "herdr-child-quarantined-live-tab: refusal erased child status"
+  [ -e "$home/state/child-herdr.herdr-presentation" ] \
+    || fail "herdr-child-quarantined-live-tab: refusal erased the quarantine journal"
+  [ -e "$case_dir/state/task-x1.meta" ] \
+    || fail "herdr-child-quarantined-live-tab: refusal erased parent metadata"
+  [ ! -e "$closed.tab" ] \
+    || fail "herdr-child-quarantined-live-tab: cleanup closed the quarantined child tab"
+
+  case_dir=$(make_case herdr-child-quarantined-dead-tab)
+  write_meta "$case_dir" local-only secondmate
+  configure_secondmate_with_herdr_child "$case_dir"
+  write_child_herdr_projection_journal_v2 "$case_dir" "$token"
+  home="$case_dir/secondmate-home"
+  log="$case_dir/herdr.log"; closed="$case_dir/closed"; : > "$log"
+  FM_FAKE_HERDR_LOG="$log" FM_FAKE_HERDR_CLOSED="$closed" \
+    FM_FAKE_HERDR_CHILD_RENAMED=1 FM_FAKE_HERDR_CHILD_TAB_DIES_WITH_PANE=1 \
+    FM_BACKEND_HERDR_IDLE_SHELL_PROOF_POLLS=1 \
+    run_teardown "$case_dir" --force > "$case_dir/stdout" 2> "$case_dir/stderr" \
+    || fail "herdr-child-quarantined-dead-tab: forced cleanup failed: $(cat "$case_dir/stderr")"
+  [ ! -d "$home" ] \
+    || fail "herdr-child-quarantined-dead-tab: confirmed-dead child tab retained the secondmate home"
+  [ ! -e "$case_dir/state/task-x1.meta" ] \
+    || fail "herdr-child-quarantined-dead-tab: confirmed-dead child tab retained parent metadata"
+  pass "forced secondmate cleanup preserves live quarantine identity and completes after confirmed tab death"
 }
 
 configure_nested_secondmate_with_herdr_grandchild() {  # <case-dir>
@@ -3989,6 +4058,7 @@ test_forced_secondmate_herdr_child_preflight_refuses_before_changes
 test_forced_secondmate_teardown_holds_descendant_lifecycle_locks
 test_forced_secondmate_herdr_child_retains_records_when_close_unconfirmed
 test_forced_secondmate_herdr_child_reclaims_recorded_tab
+test_forced_secondmate_herdr_child_preserves_quarantined_journal
 test_forced_teardown_retains_nested_secondmate_home_when_grandchild_close_unconfirmed
 test_herdr_projection_teardown_retires_journal_only_after_confirmed_close
 test_herdr_projection_teardown_retains_journal_when_close_unconfirmed

@@ -3132,6 +3132,10 @@ cleanup_firstmate_home_children() {
         if [ "$child_retire_candidate" = 1 ]; then
           rm -f "$child_journal"
         fi
+        if [ -e "$child_journal" ] || [ -L "$child_journal" ]; then
+          echo "error: herdr presentation journal for child $child_id remains quarantined; retaining that child's durable identity records and home" >&2
+          return 1
+        fi
       elif [ "$child_backend" = zellij ]; then
         # Zellij titles are scoped by the owning home tag, so forced secondmate
         # cleanup must verify child tabs as that child home, not the parent.
