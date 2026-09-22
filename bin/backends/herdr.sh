@@ -2675,7 +2675,8 @@ fm_backend_herdr_tab_presence_state() {  # <session> <workspace_id> <tab_id>
 # proof its caller uses to govern record removal.
 # Callers hold the session presentation lock.
 fm_backend_herdr_recorded_tab_close() {  # <session> <workspace-id> <tab-id>
-  local session=$1 workspace=$2 tab=$3 presence before skip_restore=0
+  local session=$1 workspace=$2 tab=$3 presence before skip_restore=0 attempt=0
+  local max_attempts=${FM_BACKEND_HERDR_TAB_CLOSE_POLLS:-40}
   [ -n "$session" ] && [ -n "$workspace" ] && [ -n "$tab" ] || return 0
   presence=$(fm_backend_herdr_tab_presence_state "$session" "$workspace" "$tab")
   case "$presence" in
@@ -2696,7 +2697,13 @@ fm_backend_herdr_recorded_tab_close() {  # <session> <workspace-id> <tab-id>
     *$'\t'"$tab") skip_restore=1 ;;
   esac
   fm_backend_herdr_cli "$session" tab close "$tab" >/dev/null 2>&1 || true
-  presence=$(fm_backend_herdr_tab_presence_state "$session" "$workspace" "$tab")
+  # Herdr can acknowledge a tab close before its inventories reflect it.
+  while [ "$attempt" -lt "$max_attempts" ]; do
+    presence=$(fm_backend_herdr_tab_presence_state "$session" "$workspace" "$tab")
+    [ "$presence" != present ] && break
+    sleep 0.05
+    attempt=$((attempt + 1))
+  done
   if [ "$presence" != dead ]; then
     [ "$skip_restore" = 1 ] || fm_backend_herdr_projection_focus_restore "$session" "$before" "task tab close" || true
     echo "warning: herdr tab $tab in workspace $workspace did not close" >&2

@@ -2057,6 +2057,18 @@ case "\${1:-} \${2:-}" in
       *"--workspace wG"*)
         if [ -e "\${FM_FAKE_HERDR_CLOSED:?}.tab" ]; then
           printf '%s\n' '{"result":{"tabs":[]}}'
+        elif [ -e "\${FM_FAKE_HERDR_CLOSED:?}.tab.pending" ]; then
+          count=0
+          [ ! -e "\${FM_FAKE_HERDR_CLOSED:?}.tab.reads" ] \
+            || count=\$(cat "\${FM_FAKE_HERDR_CLOSED:?}.tab.reads")
+          count=\$((count + 1))
+          printf '%s\n' "\$count" > "\${FM_FAKE_HERDR_CLOSED:?}.tab.reads"
+          if [ "\$count" -ge "\${FM_FAKE_HERDR_TAB_CLOSE_DELAY_READS:-0}" ]; then
+            : > "\${FM_FAKE_HERDR_CLOSED:?}.tab"
+            printf '%s\n' '{"result":{"tabs":[]}}'
+          else
+            printf '%s\n' '{"result":{"tabs":[{"tab_id":"wG:tQ","workspace_id":"wG"}]}}'
+          fi
         else
           printf '%s\n' '{"result":{"tabs":[{"tab_id":"wG:tQ","workspace_id":"wG"}]}}'
         fi
@@ -2082,7 +2094,11 @@ case "\${1:-} \${2:-}" in
     ;;
   "tab close")
     if [ "\${FM_FAKE_HERDR_TAB_CLOSE_REFUSE:-0}" != 1 ]; then
-      : > "\${FM_FAKE_HERDR_CLOSED:?}.tab"
+      if [ "\${FM_FAKE_HERDR_TAB_CLOSE_DELAY_READS:-0}" -gt 0 ]; then
+        : > "\${FM_FAKE_HERDR_CLOSED:?}.tab.pending"
+      else
+        : > "\${FM_FAKE_HERDR_CLOSED:?}.tab"
+      fi
     fi
     ;;
   "pane get")
@@ -2235,6 +2251,7 @@ test_herdr_flat_teardown_retains_records_when_tab_close_is_unconfirmed() {
   rc=0
   FM_FAKE_HERDR_LOG="$log" FM_FAKE_HERDR_CLOSED="$closed" \
     FM_FAKE_HERDR_TAB_CLOSE_REFUSE=1 FM_BACKEND_HERDR_IDLE_SHELL_PROOF_POLLS=1 \
+    FM_BACKEND_HERDR_TAB_CLOSE_POLLS=1 \
     run_teardown "$case_dir" --force > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
 
   [ "$rc" -ne 0 ] || fail "herdr-tab-close-unconfirmed: teardown removed the tab identity after a refused close"
@@ -2248,6 +2265,30 @@ test_herdr_flat_teardown_retains_records_when_tab_close_is_unconfirmed() {
   assert_grep "retaining every durable task record" "$case_dir/stderr" \
     "herdr-tab-close-unconfirmed: refusal did not explain record retention"
   pass "herdr flat teardown retains every durable record when its recorded tab close is unconfirmed"
+}
+
+test_herdr_flat_teardown_waits_for_tab_close_confirmation() {
+  local case_dir log closed reads
+  case_dir=$(make_case herdr-tab-close-delayed)
+  write_meta "$case_dir" local-only ship
+  configure_flat_herdr_teardown_case "$case_dir"
+  log="$case_dir/herdr.log"; : > "$log"
+  closed="$case_dir/closed"
+  : > "$case_dir/state/task-x1.status"
+
+  FM_FAKE_HERDR_LOG="$log" FM_FAKE_HERDR_CLOSED="$closed" \
+    FM_FAKE_HERDR_TAB_CLOSE_DELAY_READS=2 FM_BACKEND_HERDR_IDLE_SHELL_PROOF_POLLS=1 \
+    run_teardown "$case_dir" --force > "$case_dir/stdout" 2> "$case_dir/stderr" \
+    || fail "herdr-tab-close-delayed: teardown did not wait for the close to settle: $(cat "$case_dir/stderr")"
+
+  reads=$(cat "$closed.tab.reads")
+  [ "$reads" -ge 2 ] \
+    || fail "herdr-tab-close-delayed: fixture did not keep the tab visible after the close"
+  [ -e "$closed.tab" ] \
+    || fail "herdr-tab-close-delayed: the delayed tab close never became observable"
+  [ ! -e "$case_dir/state/task-x1.meta" ] \
+    || fail "herdr-tab-close-delayed: confirmed close retained the task metadata"
+  pass "herdr flat teardown waits for an asynchronous recorded-tab close to settle"
 }
 
 test_herdr_flat_teardown_refuses_tab_close_without_focus_snapshot() {
@@ -4095,6 +4136,7 @@ test_herdr_teardown_clears_escalation_marker
 test_herdr_flat_teardown_refuses_orphaning_records_then_retry_completes
 test_herdr_flat_teardown_refuses_records_on_unparseable_presence
 test_herdr_flat_teardown_retains_records_when_tab_close_is_unconfirmed
+test_herdr_flat_teardown_waits_for_tab_close_confirmation
 test_herdr_flat_teardown_refuses_tab_close_without_focus_snapshot
 test_herdr_quarantined_journal_reclaims_only_operator_workspace_tab
 test_herdr_flat_teardown_preflight_refuses_before_changes
