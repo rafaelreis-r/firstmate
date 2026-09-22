@@ -2706,17 +2706,23 @@ fm_backend_herdr_recorded_tab_close() {  # <session> <workspace-id> <tab-id>
   return 0
 }
 
-fm_backend_herdr_workspace_is_projection() {  # <session> <workspace-id>
-  local session=$1 workspace=$2 list
-  [ -n "$session" ] && [ -n "$workspace" ] || return 1
-  list=$(fm_backend_herdr_cli "$session" workspace list 2>/dev/null) || return 1
-  printf '%s' "$list" | jq -e --arg workspace "$workspace" '
-    (.result.workspaces | type) == "array"
-    and ([.result.workspaces[]
-      | select(.workspace_id == $workspace
-        and (.label | type) == "string"
-        and (.label | test(" · p:[A-Za-z0-9_-]{22}$")))] | length) == 1
-  ' >/dev/null 2>&1
+fm_backend_herdr_workspace_projection_state() {  # <session> <workspace-id>
+  local session=$1 workspace=$2 list state
+  [ -n "$session" ] && [ -n "$workspace" ] || { printf 'unknown'; return 0; }
+  list=$(fm_backend_herdr_cli "$session" workspace list 2>/dev/null) \
+    || { printf 'unknown'; return 0; }
+  state=$(printf '%s' "$list" | jq -r --arg workspace "$workspace" '
+    select((.result.workspaces | type) == "array")
+    | [.result.workspaces[] | select(.workspace_id == $workspace)]
+    | if length != 1 or (.[0].label | type) != "string" then "unknown"
+      elif (.[0].label | test(" · p:[A-Za-z0-9_-]{22}$")) then "projection"
+      else "ordinary"
+      end
+  ' 2>/dev/null) || state=unknown
+  case "$state" in
+    projection|ordinary) printf '%s' "$state" ;;
+    *) printf 'unknown' ;;
+  esac
 }
 
 # fm_backend_herdr_projection_cleanup_exact: same-process abort cleanup for a

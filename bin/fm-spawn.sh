@@ -87,8 +87,8 @@
 #   config/herdr-presentation-spaces file can say off to disable it or on to
 #   opt in below that floor; an empty file remains the historical opt-in form.
 #   A clean fresh task first writes state/<id>.herdr-presentation atomically,
-#   then creates a disposable
-#   workspace containing only the ordinary task pane. A successful clean create
+#   then creates a disposable workspace with one ordinary task tab. Herdr
+#   plugins may dock additional panes into that tab. A successful clean create
 #   upgrades its attempt journal with exact home, session, workspace, tab, pane,
 #   parent, and label bindings. On a same-identity restart, that complete binding
 #   plus authoritative metadata may replace one exact agent-free husk in place.

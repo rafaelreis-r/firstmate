@@ -113,8 +113,8 @@ The normal `fm-<id>` task tab is created in the exact new workspace returned by 
 Only the exact seeded default tab returned by the same workspace-create response can be pruned, and the prune finishes on that tab id rather than on its root pane, because a plugin can dock a pane into the seeded tab too.
 Before and after create, prune, order, abort cleanup, and normal cleanup, Firstmate verifies exact workspace, tab, pane, and active-focus ids.
 An ambiguous response grants no mutation or cleanup authority.
-A projection has converged when this attempt's own task tab and task pane carry the ids Herdr returned for them and the seeded tab is gone.
-The shape check counts nothing: a pane Firstmate never created, such as the one a docking plugin puts into every tab, used to fail an otherwise perfect projection, which is why a first projected spawn failed while a byte-identical retry succeeded.
+A projection has converged when the workspace contains exactly one tab, that tab carries the task-tab id Herdr returned, the returned task pane belongs to it, and the seeded tab is gone.
+The pane census is unrestricted because a docking plugin can add a pane to the task tab; any additional tab still fails convergence.
 
 Protocol 16 exposes `workspace.move` over the named session socket but no CLI subcommand.
 `bin/backends/herdr-workspace-move.py` sends only that whitelisted method and verifies the complete returned workspace order.
