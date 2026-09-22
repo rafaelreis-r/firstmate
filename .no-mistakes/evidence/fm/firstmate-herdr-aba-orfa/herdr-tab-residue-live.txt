@@ -1,0 +1,5 @@
+ok - real Herdr lab: a sibling pane in the task tab does not outlive teardown
+ok - real Herdr lab: an agent-bearing sibling dies with the task tab it was parked in
+skip: seeded tab w4:t1 was renamed to '[1] project › zsh' before its prune, so projection convergence cannot be observed in this Herdr
+ok - real Herdr lab: an aborted projected attempt leaves no disposable workspace behind
+ok - real Herdr lab: tab-residue coverage completed with the default-session tripwire intact
