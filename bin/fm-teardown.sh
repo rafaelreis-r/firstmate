@@ -3532,9 +3532,10 @@ fi
 # LAST pane closes, so anything else docked into this task's tab - a Herdr
 # plugin pane, an operator split - keeps the whole tab alive, and the records
 # removed below are the last thing that names it. Close the exact recorded tab
-# while the session lock still covers this teardown. A failed close only leaves
-# that tab in place: the endpoint proof above is what governs record removal,
-# and nothing here may change that verdict.
+# while the session lock still covers this teardown. A failed close retains the
+# records that name the tab so a plain rerun can retry it. A quarantined journal
+# blocks this close only when the recorded workspace itself has a projection
+# label; an ordinary operator workspace still needs its leaked task tab reaped.
 if [ "$BACKEND" = herdr ] && declare -F fm_backend_herdr_recorded_tab_close >/dev/null 2>&1; then
   HERDR_RECLAIM_SESSION=$(meta_value "$META" herdr_session)
   [ -n "$HERDR_RECLAIM_SESSION" ] || HERDR_RECLAIM_SESSION=$TEARDOWN_HERDR_SESSION
@@ -3542,11 +3543,20 @@ if [ "$BACKEND" = herdr ] && declare -F fm_backend_herdr_recorded_tab_close >/de
   HERDR_RECLAIM_TAB=$(meta_value "$META" herdr_tab_id)
   if [ -z "$HERDR_RECLAIM_WORKSPACE" ] || [ -z "$HERDR_RECLAIM_TAB" ]; then
     :
+  elif [ "$HERDR_PRESENTATION_RETIRE_CANDIDATE" != 1 ] \
+       && { [ -e "$HERDR_PRESENTATION_JOURNAL" ] || [ -L "$HERDR_PRESENTATION_JOURNAL" ]; } \
+       && fm_backend_herdr_workspace_is_projection \
+         "$HERDR_RECLAIM_SESSION" "$HERDR_RECLAIM_WORKSPACE"; then
+    :
   elif teardown_herdr_session_lock_held "$HERDR_RECLAIM_SESSION"; then
-    fm_backend_herdr_recorded_tab_close \
-      "$HERDR_RECLAIM_SESSION" "$HERDR_RECLAIM_WORKSPACE" "$HERDR_RECLAIM_TAB" || true
+    if ! fm_backend_herdr_recorded_tab_close \
+      "$HERDR_RECLAIM_SESSION" "$HERDR_RECLAIM_WORKSPACE" "$HERDR_RECLAIM_TAB"; then
+      echo "error: herdr tab $HERDR_RECLAIM_TAB for $ID is not confirmed gone; retaining every durable task record so a rerun can retry the close" >&2
+      exit 1
+    fi
   else
-    echo "warning: herdr session presentation lock is unavailable; leaving $ID's tab in place rather than closing it unlocked" >&2
+    echo "error: herdr session presentation lock is unavailable; retaining every durable task record so $ID's tab close can be retried" >&2
+    exit 1
   fi
 fi
 if [ "$KIND" != secondmate ]; then

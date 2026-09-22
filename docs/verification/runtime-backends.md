@@ -942,8 +942,8 @@ herdr pane close w1:p3           (the exact registered task pane)
 The second pane above is not Firstmate's: the `herdr-sidebar` 0.11.0 plugin docks one labelled `Sidebar`, carrying `tokens.herdr-sidebar-explorer`, into every tab within about a second of its creation, and `herdr pane split` produces the same shape with no plugin installed.
 Closing the sidebar pane first and then the registered pane removes the tab, so the docked pane is the whole difference.
 A pane docked into a projected task's tab keeps its disposable workspace alive for the same reason, and counting it also failed the projection's former one-task-pane convergence check, which is why a first projected spawn failed while a byte-identical retry succeeded.
-On this machine the `herdr-automatic-rename` 0.9.1 plugin renames the seeded default tab (observed `[1] project › sh`) before the projection can prune it, so a converged projection is unobservable here at all; the identity-based shape check was measured against the real `fm_backend_herdr_projection_create_task` with only that environment-blocked prune substituted, returning 0 with a docked pane present where the counting check returned 1.
-`tests/fm-backend-herdr-tab-residue-e2e.test.sh` is the command that refreshes this evidence; its projection case reports that rename as a skip rather than a verdict.
+On this machine the `herdr-automatic-rename` 0.9.1 plugin renames the seeded default tab (observed `[1] project › sh`) before the projection can prune it, so a converged projection is unobservable here at all.
+`tests/fm-backend-herdr-tab-residue-e2e.test.sh` refreshes the live tab-residue evidence; its projection case reports that rename as a skip rather than claiming a convergence verdict.
 
 ### fm-remote server birth and login-keychain access
 

@@ -2610,20 +2610,18 @@ fm_backend_herdr_projection_create_task() {  # <cwd> <workspace-label> <task-lab
     echo "error: could not parse the disposable herdr presentation workspace shape" >&2
     return 1
   fi
-  # Identity, not census: the projection converged when this attempt's own task
-  # tab and task pane are where this attempt put them and the seeded tab is
-  # gone. Counting the workspace's tabs and panes instead made a pane Firstmate
-  # never created - a Herdr plugin docks one into every tab - fail an otherwise
-  # perfect projection, which is why a first projected spawn failed and a
-  # byte-identical retry succeeded.
+  # The task tab must be the projection's only remaining tab, while its pane
+  # census is unrestricted: a Herdr plugin can dock a pane into the task tab,
+  # but an additional tab would survive teardown of the recorded task tab.
   if ! printf '%s' "$tabs" | jq -e --arg task "$FM_BACKEND_HERDR_PROJECTION_TAB_ID" \
        --arg seeded "$FM_BACKEND_HERDR_PROJECTION_SEEDED_TAB_ID" \
-       '([.result.tabs[] | select(.tab_id == $task)] | length) == 1
+       '(.result.tabs | length) == 1
+        and ([.result.tabs[] | select(.tab_id == $task)] | length) == 1
         and ([.result.tabs[] | select(.tab_id == $seeded)] | length) == 0' >/dev/null 2>&1 \
      || ! printf '%s' "$panes" | jq -e --arg pane "$FM_BACKEND_HERDR_PROJECTION_PANE_ID" \
        --arg tab "$FM_BACKEND_HERDR_PROJECTION_TAB_ID" \
        '([.result.panes[] | select(.pane_id == $pane and .tab_id == $tab)] | length) == 1' >/dev/null 2>&1; then
-    echo "error: disposable herdr presentation workspace did not converge to its exact task pane" >&2
+    echo "error: disposable herdr presentation workspace did not converge to its sole task tab" >&2
     return 1
   fi
   return 0
@@ -2706,6 +2704,19 @@ fm_backend_herdr_recorded_tab_close() {  # <session> <workspace-id> <tab-id>
   fi
   [ "$skip_restore" = 1 ] || fm_backend_herdr_projection_focus_restore "$session" "$before" "task tab close" || return 1
   return 0
+}
+
+fm_backend_herdr_workspace_is_projection() {  # <session> <workspace-id>
+  local session=$1 workspace=$2 list
+  [ -n "$session" ] && [ -n "$workspace" ] || return 1
+  list=$(fm_backend_herdr_cli "$session" workspace list 2>/dev/null) || return 1
+  printf '%s' "$list" | jq -e --arg workspace "$workspace" '
+    (.result.workspaces | type) == "array"
+    and ([.result.workspaces[]
+      | select(.workspace_id == $workspace
+        and (.label | type) == "string"
+        and (.label | test(" · p:[A-Za-z0-9_-]{22}$")))] | length) == 1
+  ' >/dev/null 2>&1
 }
 
 # fm_backend_herdr_projection_cleanup_exact: same-process abort cleanup for a
