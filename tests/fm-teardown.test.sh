@@ -2105,18 +2105,19 @@ SH
   chmod +x "$case_dir/fakebin/herdr"
 }
 
-write_herdr_projection_journal_v2() {  # <case-dir> <workspace-id> <projection-id>
-  local case_dir=$1 workspace=$2 token=$3
+write_herdr_projection_journal_v2() {  # <case-dir> <workspace-id> <projection-id> [session] [tab-id] [pane-id] [parent-workspace-id]
+  local case_dir=$1 workspace=$2 token=$3 session=${4:-default}
+  local tab=${5:-$workspace:t1} pane=${6:-$workspace:p1} parent=${7:-wH}
   printf '%s\n' \
     'version=2' \
     'task_id=task-x1' \
     "projection_id=$token" \
     "home=$case_dir" \
-    'session=default' \
+    "session=$session" \
     "workspace_id=$workspace" \
-    "tab_id=$workspace:t1" \
-    "pane_id=$workspace:p1" \
-    'parent_workspace_id=wH' \
+    "tab_id=$tab" \
+    "pane_id=$pane" \
+    "parent_workspace_id=$parent" \
     'parent_label=firstmate' \
     "workspace_label=└ task-x1 · p:$token" \
     'task_label=fm-task-x1' \
@@ -2742,6 +2743,9 @@ case "${1:-} ${2:-}" in
        && [ -e "${FM_FAKE_HERDR_CLOSED:?}" ] \
        && [ ! -e "${FM_FAKE_HERDR_CLOSED:?}.tab" ]; then
       printf '%s\n' '{"result":{"workspaces":[{"workspace_id":"w1","active_tab_id":"w1:t2","label":"firstmate/task-x1 · p:AbCdEfGhIjKlMnOpQrStUv","focused":false},{"workspace_id":"w2","active_tab_id":"w2:t2","label":"2ndmate-bravo","focused":true},{"workspace_id":"w3","active_tab_id":"w3:t1","label":"2ndmate-alpha","focused":false}]}}'
+    elif [ "${FM_FAKE_HERDR_TAB_RESTORE_FAIL:-0}" = 1 ] \
+         && [ -e "${FM_FAKE_HERDR_CLOSED:?}.tab" ]; then
+      printf '%s\n' '{"result":{"workspaces":[{"workspace_id":"w2","active_tab_id":"w2:t2","label":"2ndmate-bravo","focused":false},{"workspace_id":"w3","active_tab_id":"w3:t1","label":"2ndmate-alpha","focused":true}]}}'
     elif [ -e "${FM_FAKE_HERDR_RESTORED:?}" ]; then
       printf '%s\n' '{"result":{"workspaces":[{"workspace_id":"w2","active_tab_id":"w2:t2","label":"2ndmate-bravo","focused":true},{"workspace_id":"w3","active_tab_id":"w3:t1","label":"2ndmate-alpha","focused":false}]}}'
     elif [ -e "${FM_FAKE_HERDR_CLOSED:?}" ]; then
@@ -2797,7 +2801,9 @@ case "${1:-} ${2:-}" in
     printf '%s\n' '{"result":{"tab":{"tab_id":"w2:t2","workspace_id":"w2"}}}'
     ;;
   "tab focus")
-    if [ "${FM_FAKE_HERDR_RESTORE_FAIL:-0}" = 1 ]; then
+    if [ "${FM_FAKE_HERDR_RESTORE_FAIL:-0}" = 1 ] \
+       || { [ "${FM_FAKE_HERDR_TAB_RESTORE_FAIL:-0}" = 1 ] \
+         && [ -e "${FM_FAKE_HERDR_CLOSED:?}.tab" ]; }; then
       exit 1
     fi
     : > "${FM_FAKE_HERDR_RESTORED:?}"
@@ -2882,6 +2888,40 @@ test_herdr_projection_teardown_retains_journal_when_tab_close_unconfirmed() {
   assert_grep "retaining every durable task record" "$case_dir/stderr" \
     "herdr-projection-tab-unconfirmed: refusal did not explain record retention"
   pass "herdr projection teardown retains its journal until the recorded tab is confirmed gone"
+}
+
+test_herdr_projection_retry_retires_journal_after_confirmed_tab_close() {
+  local case_dir log closed restored rc record token=AbCdEfGhIjKlMnOpQrStUv
+  case_dir=$(make_case herdr-projection-tab-restore-retry)
+  write_meta "$case_dir" local-only ship
+  configure_herdr_projection_teardown_case "$case_dir"
+  write_herdr_projection_journal_v2 \
+    "$case_dir" w1 "$token" fmtest w1:t2 w1:p2 w2
+  log="$case_dir/herdr.log"; closed="$case_dir/closed"; restored="$case_dir/restored"; : > "$log"
+  : > "$case_dir/state/task-x1.status"
+  : > "$case_dir/state/task-x1.turn-ended"
+
+  rc=0
+  FM_FAKE_HERDR_LOG="$log" FM_FAKE_HERDR_CLOSED="$closed" FM_FAKE_HERDR_RESTORED="$restored" \
+    FM_FAKE_HERDR_KEEP_TAB_AFTER_PANE=1 FM_FAKE_HERDR_TAB_RESTORE_FAIL=1 \
+    run_teardown "$case_dir" --force > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+  [ "$rc" -ne 0 ] \
+    || fail "herdr-projection-tab-restore-retry: failed tab-focus restore did not retain records for retry"
+  [ -e "$closed.tab" ] \
+    || fail "herdr-projection-tab-restore-retry: first teardown did not confirm the recorded tab close"
+  for record in task-x1.meta task-x1.status task-x1.turn-ended task-x1.herdr-presentation; do
+    [ -e "$case_dir/state/$record" ] \
+      || fail "herdr-projection-tab-restore-retry: failed restoration erased $record before retry"
+  done
+
+  FM_FAKE_HERDR_LOG="$log" FM_FAKE_HERDR_CLOSED="$closed" FM_FAKE_HERDR_RESTORED="$restored" \
+    run_teardown "$case_dir" --force > "$case_dir/retry.stdout" 2> "$case_dir/retry.stderr" \
+    || fail "herdr-projection-tab-restore-retry: retry failed: $(cat "$case_dir/retry.stderr")"
+  for record in task-x1.meta task-x1.status task-x1.turn-ended task-x1.herdr-presentation; do
+    [ ! -e "$case_dir/state/$record" ] \
+      || fail "herdr-projection-tab-restore-retry: retry stranded $record"
+  done
+  pass "herdr projection retry retires its journal after a confirmed tab close"
 }
 
 test_herdr_projection_teardown_surfaces_restore_failure_without_blocking_cleanup() {
@@ -3953,6 +3993,7 @@ test_forced_teardown_retains_nested_secondmate_home_when_grandchild_close_unconf
 test_herdr_projection_teardown_retires_journal_only_after_confirmed_close
 test_herdr_projection_teardown_retains_journal_when_close_unconfirmed
 test_herdr_projection_teardown_retains_journal_when_tab_close_unconfirmed
+test_herdr_projection_retry_retires_journal_after_confirmed_tab_close
 test_herdr_projection_teardown_surfaces_restore_failure_without_blocking_cleanup
 test_squash_merged_branch_deleted_allows
 test_squash_merged_pr_allows_when_head_ancestor_of_pr_head

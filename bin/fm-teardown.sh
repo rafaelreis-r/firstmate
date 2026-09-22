@@ -3041,7 +3041,7 @@ endpoint_close_refusal() {  # <subject> <backend> <target> <honors-force>
 
 teardown_herdr_recorded_tab() {  # <meta> <id> <subject> <journal> <retire-candidate> <fallback-session>
   local meta=$1 id=$2 subject=$3 journal=$4 retire_candidate=$5 fallback_session=$6
-  local session workspace tab projection_state
+  local session workspace tab presence projection_state
   session=$(meta_value "$meta" herdr_session)
   [ -n "$session" ] || session=$fallback_session
   workspace=$(meta_value "$meta" herdr_workspace_id)
@@ -3050,7 +3050,13 @@ teardown_herdr_recorded_tab() {  # <meta> <id> <subject> <journal> <retire-candi
     projection_state=$(fm_backend_herdr_projection_journal_workspace_state \
       "$journal" "$id" "$session" "$workspace")
     case "$projection_state" in
-      projection) return 0 ;;
+      projection)
+        presence=$(fm_backend_herdr_tab_presence_state "$session" "$workspace" "$tab")
+        if [ "$presence" = dead ]; then
+          rm -f "$journal"
+        fi
+        return 0
+        ;;
       ordinary) ;;
       *)
         echo "error: herdr presentation journal for $subject cannot establish exact ownership because journal fields session and workspace_id or metadata fields herdr_session and herdr_workspace_id are missing or invalid; retaining every durable task record" >&2
