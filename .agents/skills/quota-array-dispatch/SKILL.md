@@ -120,11 +120,6 @@ After the permitted TOON-to-JSON fallback, escalate to Firstmate instead of rout
 Never resolve that terminal uncertainty by treating unknown as healthy or by choosing arbitrarily.
 Show the scalar or the literal `unknown` in the rationale; do not hide it in a score.
 
-### omp fallback chain
-
-When the selected profile runs on `omp`, pass `bin/fm-spawn.sh --fallback` with the tier's other eligible omp candidates, in the same order used for the selection, each as `<model>:<effort>`.
-When `bin/fm-dispatch-resolve.sh`'s `clear` profile line already carries `--fallback`, pass that line as is.
-
 Do not compare headroom against runway by hand.
 Do not use pace or signed reserve as a later tie-break layer.
 Do not read `aheadWindowIds`, `behindWindowIds`, `onPaceWindowIds`, `limitingWindowIds`, or other window-id lists to reconstruct what `spendPriority` already computed.
@@ -136,3 +131,8 @@ Report duplicate concrete profiles as a configuration error.
 Account for every candidate visibly before selecting or escalating, naming its catalog evidence, provider relation, applicable quota and authentication facts, remaining uncertainty, fit and reasoning class, `spendPriority`, and runway-versus-horizon result.
 A blocked credential report must name `harness`, `model`, authentication surface, and concrete failure evidence; never emit a bare `Grok unauthenticated` statement.
 Never conclude with an unexplained "best quota" label.
+
+### omp fallback chain
+
+When the selected profile runs on `omp`, pass `bin/fm-spawn.sh --fallback` with the tier's other eligible omp candidates, in the same order used for the selection, each as `<model>:<effort>`.
+When `bin/fm-dispatch-resolve.sh`'s `clear` profile line already carries `--fallback`, pass that line as is.
