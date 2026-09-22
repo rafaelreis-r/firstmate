@@ -3077,9 +3077,17 @@ teardown_herdr_recorded_tab() {  # <meta> <id> <subject> <journal> <retire-candi
 
 cleanup_firstmate_home_children() {
   local home=$1 sub_state child_meta child_id child_t child_wt child_proj child_kind child_home child_backend child_orca_worktree_id child_return_rc child_busy_gen child_owner_rc
-  local child_journal child_retire_candidate child_session child_workspace child_pane
+  local child_journal child_journal_id child_retire_candidate child_session child_workspace child_pane
   sub_state="$home/state"
   [ -d "$sub_state" ] || return 0
+  for child_journal in "$sub_state"/*.herdr-presentation; do
+    { [ -e "$child_journal" ] || [ -L "$child_journal" ]; } || continue
+    child_journal_id=$(basename "$child_journal" .herdr-presentation)
+    if [ ! -e "$sub_state/$child_journal_id.meta" ] && [ ! -L "$sub_state/$child_journal_id.meta" ]; then
+      echo "error: herdr presentation journal for child $child_journal_id has no matching task metadata; retaining the journal-only quarantine record and its home" >&2
+      return 1
+    fi
+  done
   for child_meta in "$sub_state"/*.meta; do
     [ -e "$child_meta" ] || continue
     child_id=$(basename "$child_meta" .meta)

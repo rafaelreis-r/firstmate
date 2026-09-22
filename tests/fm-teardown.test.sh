@@ -2710,6 +2710,50 @@ test_forced_secondmate_herdr_child_preserves_quarantined_journal() {
   pass "forced secondmate cleanup preserves live quarantine identity and completes after confirmed tab death"
 }
 
+test_forced_secondmate_preserves_journal_after_child_metadata_retires() {
+  local case_dir home log closed rc token=AbCdEfGhIjKlMnOpQrStUv
+  case_dir=$(make_case herdr-child-journal-only)
+  write_meta "$case_dir" local-only secondmate
+  configure_secondmate_with_herdr_child "$case_dir"
+  write_child_herdr_projection_journal_v2 "$case_dir" "$token"
+  home="$case_dir/secondmate-home"
+  log="$case_dir/herdr.log"; closed="$case_dir/closed"; : > "$log"
+  mkdir -p "$home/data"
+  printf '%s\n' '# Backlog' '' '## In flight' '' '## Queued' '' '## Done' \
+    > "$home/data/backlog.md"
+  tasks-axi add child-herdr "child teardown fixture" --kind ship \
+    --file "$home/data/backlog.md" >/dev/null
+  tasks-axi start child-herdr --file "$home/data/backlog.md" >/dev/null
+
+  FM_HOME="$home" FM_ROOT_OVERRIDE="$ROOT" FM_STATE_OVERRIDE="$home/state" \
+    FM_DATA_OVERRIDE="$home/data" FM_CONFIG_OVERRIDE="$home/config" \
+    FM_FAKE_HERDR_LOG="$log" FM_FAKE_HERDR_CLOSED="$closed" \
+    FM_FAKE_HERDR_CHILD_RENAMED=1 FM_BACKEND_HERDR_IDLE_SHELL_PROOF_POLLS=1 \
+    PATH="$case_dir/fakebin:$PATH" \
+    "$TEARDOWN" child-herdr --force --legacy-record \
+    > "$case_dir/child.stdout" 2> "$case_dir/child.stderr" \
+    || fail "herdr-child-journal-only: child teardown failed: $(cat "$case_dir/child.stderr")"
+  [ ! -e "$home/state/child-herdr.meta" ] \
+    || fail "herdr-child-journal-only: child teardown retained metadata"
+  [ -e "$home/state/child-herdr.herdr-presentation" ] \
+    || fail "herdr-child-journal-only: child teardown retired the quarantine journal"
+  [ ! -e "$closed.tab" ] \
+    || fail "herdr-child-journal-only: child teardown closed the quarantined tab"
+
+  rc=0
+  run_teardown "$case_dir" --force > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+  [ "$rc" -ne 0 ] \
+    || fail "herdr-child-journal-only: parent teardown deleted a home with a journal-only quarantine"
+  [ -d "$home" ] || fail "herdr-child-journal-only: parent refusal removed the secondmate home"
+  [ -e "$home/state/child-herdr.herdr-presentation" ] \
+    || fail "herdr-child-journal-only: parent refusal erased the quarantine journal"
+  [ -e "$case_dir/state/task-x1.meta" ] \
+    || fail "herdr-child-journal-only: parent refusal erased parent metadata"
+  assert_grep "has no matching task metadata" "$case_dir/stderr" \
+    "herdr-child-journal-only: refusal did not identify the journal-only quarantine"
+  pass "forced secondmate cleanup preserves journal-only quarantine identity"
+}
+
 configure_nested_secondmate_with_herdr_grandchild() {  # <case-dir>
   local case_dir=$1 home="$1/secondmate-home" nested_home="$1/secondmate-home/nested-home"
   mkdir -p "$home/state" "$home/data" "$home/config" "$home/projects"
@@ -4059,6 +4103,7 @@ test_forced_secondmate_teardown_holds_descendant_lifecycle_locks
 test_forced_secondmate_herdr_child_retains_records_when_close_unconfirmed
 test_forced_secondmate_herdr_child_reclaims_recorded_tab
 test_forced_secondmate_herdr_child_preserves_quarantined_journal
+test_forced_secondmate_preserves_journal_after_child_metadata_retires
 test_forced_teardown_retains_nested_secondmate_home_when_grandchild_close_unconfirmed
 test_herdr_projection_teardown_retires_journal_only_after_confirmed_close
 test_herdr_projection_teardown_retains_journal_when_close_unconfirmed
