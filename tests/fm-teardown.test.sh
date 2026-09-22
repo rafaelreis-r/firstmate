@@ -2077,7 +2077,11 @@ case "\${1:-} \${2:-}" in
     esac
     ;;
   "pane list")
-    printf '%s\n' '{"result":{"panes":[{"pane_id":"wG:pQ","tab_id":"wG:tQ"}]}}'
+    if [ "\${FM_FAKE_HERDR_LEGACY_LAST_TAB:-0}" = 1 ] && [ -e "\${FM_FAKE_HERDR_CLOSED:?}" ]; then
+      printf '%s\n' '{"result":{"panes":[{"pane_id":"wG:pSibling","tab_id":"wG:tQ"}]}}'
+    else
+      printf '%s\n' '{"result":{"panes":[{"pane_id":"wG:pQ","tab_id":"wG:tQ"}]}}'
+    fi
     ;;
   "status --json")
     printf '%s\n' '{"server":{"running":true}}'
@@ -2090,10 +2094,17 @@ case "\${1:-} \${2:-}" in
     fi
     ;;
   "pane close")
-    : > "\${FM_FAKE_HERDR_CLOSED:?}"
+    if [ "\${3:-}" = wG:pSibling ]; then
+      : > "\${FM_FAKE_HERDR_CLOSED:?}.tab"
+    else
+      : > "\${FM_FAKE_HERDR_CLOSED:?}"
+    fi
     ;;
   "tab close")
-    if [ "\${FM_FAKE_HERDR_TAB_CLOSE_REFUSE:-0}" != 1 ]; then
+    if [ "\${FM_FAKE_HERDR_LEGACY_LAST_TAB:-0}" = 1 ]; then
+      printf '%s\n' '{"error":{"code":"tab_close_failed","message":"cannot close the last tab in a workspace"}}'
+      exit 1
+    elif [ "\${FM_FAKE_HERDR_TAB_CLOSE_REFUSE:-0}" != 1 ]; then
       if [ "\${FM_FAKE_HERDR_TAB_CLOSE_DELAY_READS:-0}" -gt 0 ]; then
         : > "\${FM_FAKE_HERDR_CLOSED:?}.tab.pending"
       else
@@ -2289,6 +2300,31 @@ test_herdr_flat_teardown_waits_for_tab_close_confirmation() {
   [ ! -e "$case_dir/state/task-x1.meta" ] \
     || fail "herdr-tab-close-delayed: confirmed close retained the task metadata"
   pass "herdr flat teardown waits for an asynchronous recorded-tab close to settle"
+}
+
+test_herdr_flat_teardown_closes_legacy_last_tab_by_its_panes() {
+  local case_dir log closed
+  case_dir=$(make_case herdr-tab-close-legacy-last)
+  write_meta "$case_dir" local-only ship
+  configure_flat_herdr_teardown_case "$case_dir"
+  log="$case_dir/herdr.log"; : > "$log"
+  closed="$case_dir/closed"
+  : > "$case_dir/state/task-x1.status"
+
+  FM_FAKE_HERDR_LOG="$log" FM_FAKE_HERDR_CLOSED="$closed" \
+    FM_FAKE_HERDR_LEGACY_LAST_TAB=1 FM_BACKEND_HERDR_IDLE_SHELL_PROOF_POLLS=1 \
+    run_teardown "$case_dir" --force > "$case_dir/stdout" 2> "$case_dir/stderr" \
+    || fail "herdr-tab-close-legacy-last: teardown did not close the last tab on the legacy API: $(cat "$case_dir/stderr")"
+
+  assert_contains "$(cat "$log")" "tab close wG:tQ" \
+    "herdr-tab-close-legacy-last: fixture did not exercise the rejected tab close"
+  assert_contains "$(cat "$log")" "pane close wG:pSibling" \
+    "herdr-tab-close-legacy-last: teardown did not close the remaining pane of the exact recorded tab"
+  [ -e "$closed.tab" ] \
+    || fail "herdr-tab-close-legacy-last: the exact recorded tab never became absent"
+  [ ! -e "$case_dir/state/task-x1.meta" ] \
+    || fail "herdr-tab-close-legacy-last: confirmed close retained the task metadata"
+  pass "herdr flat teardown closes an exact last tab on the legacy Herdr API"
 }
 
 test_herdr_flat_teardown_refuses_tab_close_without_focus_snapshot() {
@@ -4137,6 +4173,7 @@ test_herdr_flat_teardown_refuses_orphaning_records_then_retry_completes
 test_herdr_flat_teardown_refuses_records_on_unparseable_presence
 test_herdr_flat_teardown_retains_records_when_tab_close_is_unconfirmed
 test_herdr_flat_teardown_waits_for_tab_close_confirmation
+test_herdr_flat_teardown_closes_legacy_last_tab_by_its_panes
 test_herdr_flat_teardown_refuses_tab_close_without_focus_snapshot
 test_herdr_quarantined_journal_reclaims_only_operator_workspace_tab
 test_herdr_flat_teardown_preflight_refuses_before_changes

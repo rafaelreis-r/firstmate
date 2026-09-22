@@ -2676,6 +2676,7 @@ fm_backend_herdr_tab_presence_state() {  # <session> <workspace_id> <tab_id>
 # Callers hold the session presentation lock.
 fm_backend_herdr_recorded_tab_close() {  # <session> <workspace-id> <tab-id>
   local session=$1 workspace=$2 tab=$3 presence before skip_restore=0 attempt=0
+  local close_out close_status tabs tab_count panes pane_ids pane_id
   local max_attempts=${FM_BACKEND_HERDR_TAB_CLOSE_POLLS:-40}
   [ -n "$session" ] && [ -n "$workspace" ] && [ -n "$tab" ] || return 0
   presence=$(fm_backend_herdr_tab_presence_state "$session" "$workspace" "$tab")
@@ -2696,7 +2697,43 @@ fm_backend_herdr_recorded_tab_close() {  # <session> <workspace-id> <tab-id>
   case "$before" in
     *$'\t'"$tab") skip_restore=1 ;;
   esac
-  fm_backend_herdr_cli "$session" tab close "$tab" >/dev/null 2>&1 || true
+  close_status=0
+  close_out=$(fm_backend_herdr_cli "$session" tab close "$tab" 2>&1) || close_status=$?
+  # Herdr 0.7.x rejects tab.close for a workspace's last tab. Preserve the
+  # exact-tab contract on that supported release by closing only the panes a
+  # fresh structured inventory still places in the already verified tab. The
+  # last pane close removes that tab and its now-empty workspace. Any other
+  # tab-close error remains a refusal.
+  if [ "$close_status" -ne 0 ] \
+     && printf '%s' "$close_out" | jq -e '
+       .error.code == "tab_close_failed"
+       and .error.message == "cannot close the last tab in a workspace"
+     ' >/dev/null 2>&1; then
+    tabs=$(fm_backend_herdr_cli "$session" tab list --workspace "$workspace" 2>/dev/null) || tabs=
+    tab_count=$(printf '%s' "$tabs" | jq -r --arg tab "$tab" '
+      select((.result.tabs | type) == "array")
+      | select((.result.tabs | length) == 1 and .result.tabs[0].tab_id == $tab)
+      | .result.tabs | length
+    ' 2>/dev/null)
+    if [ "$tab_count" = 1 ]; then
+      panes=$(fm_backend_herdr_cli "$session" pane list --workspace "$workspace" 2>/dev/null) || panes=
+      pane_ids=$(printf '%s' "$panes" | jq -r --arg tab "$tab" '
+        select((.result.panes | type) == "array")
+        | .result.panes[] | select(.tab_id == $tab) | .pane_id
+      ' 2>/dev/null)
+      if [ -n "$pane_ids" ] \
+         && fm_backend_herdr_projection_target_tab_mutation_allowed "$session" "$tab"; then
+        [ -z "${FM_BACKEND_HERDR_PROJECTION_MUTATION_FOCUS:-}" ] \
+          || before=$FM_BACKEND_HERDR_PROJECTION_MUTATION_FOCUS
+        while IFS= read -r pane_id; do
+          [ -n "$pane_id" ] || continue
+          fm_backend_herdr_cli "$session" pane close "$pane_id" >/dev/null 2>&1 || true
+        done <<EOF
+$pane_ids
+EOF
+      fi
+    fi
+  fi
   # Herdr can acknowledge a tab close before its inventories reflect it.
   while [ "$attempt" -lt "$max_attempts" ]; do
     presence=$(fm_backend_herdr_tab_presence_state "$session" "$workspace" "$tab")
