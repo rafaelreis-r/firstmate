@@ -31,6 +31,23 @@
 // which is absent whenever no actionable close is pending rather than ever holding an empty list.
 // Stale callbacks from a prior generation are no-ops against the active replacement.
 //
+// Subagent sessions (stated once here):
+// omp's own task tool runs a subagent as a fully separate session in this
+// same process, interleaved with main's still-open turn: it gets its own
+// session_start and (later) session_shutdown, each carrying a distinct
+// ctx.sessionManager.getSessionId(). The only signal the API gives to tell a
+// subagent apart from a genuine replacement (/new, /resume, /fork) is
+// ctx.sessionManager.getHeader().parentSession: present on a subagent's own
+// header, absent on every replacement's (verified empirically, omp 18.3.1).
+// session_start and session_shutdown for a subagent therefore never touch
+// main's generation. A wake is also held back while any subagent session is
+// open: omp delivers a followUp into whichever turn is currently active, so
+// a wake sent mid-subagent lands in the subagent's own transcript and is
+// lost to main entirely (verified empirically, omp 18.3.1); it is queued
+// and flushed once no subagent session remains open, bounded by
+// FM_WATCH_SUBAGENT_CLEAR_TIMEOUT_MS so a subagent that never reaches
+// session_shutdown cannot block delivery forever.
+//
 // Delivery versus consumption (stated once here):
 // A main follow-up is delivered once omp accepts it (sendUserMessage returns).
 // The successor pipeline never waits for the model to read it: a follow-up
@@ -143,11 +160,17 @@ const armReadyTimeoutMs = positiveInteger(
 const armRetireTimeoutMs = positiveInteger("FM_WATCH_ARM_RETIRE_TIMEOUT_MS", 1000);
 const repairOnlyHint = "call fm_watch_arm_omp again only after a later notification says the cycle is missing, failed, or unhealthy";
 const shuttingDownMessage = "watcher: not armed - omp session is shutting down";
+const subagentClearTimeoutMs = positiveInteger("FM_WATCH_SUBAGENT_CLEAR_TIMEOUT_MS", 10 * 60 * 1000);
 
 let nextGenerationId = 0;
 let nextHandoffId = 0;
 let activeGeneration: SessionGeneration | null = null;
 let replacementHandoff: PendingActionableClose[] | null = null;
+// omp's own task tool runs a subagent as a fully separate session in this
+// same process (docs above); these track how many are currently open so a
+// wake can be held back until none remain.
+let openSubagentSessions = 0;
+let subagentClearWaiters: Array<() => void> = [];
 type ReplacementActionableReceiver = (pending: PendingActionableClose) => void;
 type ActionableDeliveryClaim = {
   owner: SessionGeneration;
@@ -497,6 +520,40 @@ function generationIsLive(generation: SessionGeneration): boolean {
   return activeGeneration === generation && !generation.stopping;
 }
 
+// omp's extension API ships no separately installable type package (header
+// above); this is the exact getHeader().parentSession shape it exposes.
+type SubagentHeaderContext = { sessionManager?: { getHeader?: () => { parentSession?: unknown } } };
+
+function isSubagentSession(ctx: unknown): boolean {
+  const sessionCtx = ctx as SubagentHeaderContext;
+  try {
+    return Boolean(sessionCtx?.sessionManager?.getHeader?.()?.parentSession);
+  } catch {
+    return false;
+  }
+}
+
+function noteSubagentClosed(): void {
+  openSubagentSessions = Math.max(0, openSubagentSessions - 1);
+  if (openSubagentSessions > 0) return;
+  const waiters = subagentClearWaiters;
+  subagentClearWaiters = [];
+  for (const resolve of waiters) resolve();
+}
+
+// Bounded so a subagent that never reaches session_shutdown (killed, wedged)
+// cannot block wake delivery forever.
+function waitForNoActiveSubagents(): Promise<void> {
+  if (openSubagentSessions === 0) return Promise.resolve();
+  return new Promise<void>((resolve) => {
+    const timer = setTimeout(resolve, subagentClearTimeoutMs);
+    subagentClearWaiters.push(() => {
+      clearTimeout(timer);
+      resolve();
+    });
+  });
+}
+
 function stopGeneration(generation: SessionGeneration): ChildProcess | null {
   generation.stopping = true;
   if (generation.retryTimer) clearTimeout(generation.retryTimer);
@@ -569,6 +626,16 @@ export default function (pi: ExtensionAPI) {
     // accepted but unconsumed wake therefore covers later pending tokens; mark
     // them delivered so the normal cleanup removes their replacement records.
     // A close arriving after consumption sees an empty map and gets a new wake.
+    if (pending && owner.unconsumedWakes.size > 0) {
+      pending.delivered = true;
+      return true;
+    }
+    // omp delivers a followUp into whichever session is currently active, so
+    // sending while a subagent is open would lose the wake to its transcript
+    // instead of main's (docs above). Re-check both conditions once the gate
+    // opens: either could have changed while this call was waiting.
+    await waitForNoActiveSubagents();
+    if (!generationIsLive(owner)) return false;
     if (pending && owner.unconsumedWakes.size > 0) {
       pending.delivered = true;
       return true;
@@ -1119,14 +1186,22 @@ export default function (pi: ExtensionAPI) {
     consumeWake(generation, userMessageText(message.content));
   });
 
-  pi.on?.("session_start", async () => {
+  pi.on?.("session_start", async (_event, ctx) => {
+    if (isSubagentSession(ctx)) {
+      openSubagentSessions += 1;
+      return;
+    }
     if (generation.stopping) generation = createGeneration();
     activateGeneration(generation);
     markLoaded();
     if (lockOwnership() !== "owned") return;
     activateOwnedWatch(generation);
   });
-  pi.on?.("session_shutdown", async () => {
+  pi.on?.("session_shutdown", async (_event, ctx) => {
+    if (isSubagentSession(ctx)) {
+      noteSubagentClosed();
+      return;
+    }
     // omp carries no shutdown reason (verified: `reason` is undefined), so the
     // replacement handoff is always persisted when anything is pending; a
     // terminal quit then merely replays an already-drained wake next start.

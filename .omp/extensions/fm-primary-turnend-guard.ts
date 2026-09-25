@@ -26,6 +26,13 @@
 // before_agent_start returning { message } was verified to reach model context
 // on omp 18.1.11 (the model quoted an injected marker back), so omp qualifies
 // for the Run tier.
+//
+// Subagent sessions: omp's own task tool runs a subagent as a fully
+// separate session that fires this same session_start, session_compact,
+// and session_shutdown lifecycle; none of the three may touch this
+// extension's session-start generation when the firing session is a
+// subagent (full rationale: .omp/extensions/fm-primary-omp-watch.ts
+// "Subagent sessions").
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
@@ -98,6 +105,7 @@ const sessionstartDeliveryBytes = 512 * 1024;
 type SessionStartContext = {
   sessionManager?: {
     getSessionId?: () => unknown;
+    getHeader?: () => { parentSession?: unknown };
   };
 };
 
@@ -156,6 +164,17 @@ function sessionIdFromContext(ctx: SessionStartContext): string {
     return String(ctx?.sessionManager?.getSessionId?.() ?? "");
   } catch {
     return "";
+  }
+}
+
+// omp's own task tool runs a subagent as a fully separate session that fires
+// this same lifecycle; its own header carries parentSession where a genuine
+// replacement's never does (full rationale: fm-primary-omp-watch.ts).
+function isSubagentSession(ctx: SessionStartContext): boolean {
+  try {
+    return Boolean(ctx?.sessionManager?.getHeader?.()?.parentSession);
+  } catch {
+    return false;
   }
 }
 
@@ -538,6 +557,7 @@ export default function (pi: ExtensionAPI) {
   registerSessionstartExitListener();
 
   pi.on?.("session_start", (_event, ctx) => {
+    if (isSubagentSession(ctx)) return;
     sessionStarts += 1;
     const source: SessionstartSource = sessionStarts === 1
       ? (launchResumeSource() ?? "startup")
@@ -558,6 +578,7 @@ export default function (pi: ExtensionAPI) {
   // is idle and auto-compaction may retry without another before_agent_start,
   // so the message is sent directly while sharing generation ownership.
   pi.on?.("session_compact", async (_event, ctx) => {
+    if (isSubagentSession(ctx)) return;
     registerSessionstartExitListener();
     const generation = createSessionstartGeneration("compact", sessionIdFromContext(ctx));
     sessionstartGeneration = generation;
@@ -570,7 +591,8 @@ export default function (pi: ExtensionAPI) {
     }
   });
 
-  pi.on?.("session_shutdown", async () => {
+  pi.on?.("session_shutdown", async (_event, ctx) => {
+    if (isSubagentSession(ctx)) return;
     const generation = sessionstartGeneration;
     try {
       if (generation) await stopSessionstartGeneration(generation);
