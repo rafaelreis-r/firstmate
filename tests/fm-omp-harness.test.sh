@@ -966,12 +966,12 @@ if (!tool || tool.name !== "fm_watch_arm_omp") throw new Error("fm_watch_arm_omp
 const armed = await tool.execute();
 if (!/^watcher: started omp extension arm child 1;/.test(armed.content[0].text)) throw new Error(`unexpected arm result: ${armed.content[0].text}`);
 // A subagent that opens and fully closes before the arm child ever produces
-// anything must leave the primary's generation exactly as live as it found it.
+// anything must leave the primary generation exactly as live as it found it.
 await handlers.get("session_start")({ type: "session_start" }, subagentCtx("sub-finished"));
 await handlers.get("session_shutdown")({}, subagentCtx("sub-finished"));
 const stillArmed = await tool.execute();
 if (!/^watcher: unchanged - omp extension already owns an arm child/.test(stillArmed.content[0].text)) {
-  throw new Error(`a finished subagent's lifecycle corrupted the primary's generation: ${stillArmed.content[0].text}`);
+  throw new Error(`a finished subagent lifecycle corrupted the primary generation: ${stillArmed.content[0].text}`);
 }
 // A second subagent stays open while the arm child closes with an actionable
 // reason; the wake must not be sent while it is still open.
