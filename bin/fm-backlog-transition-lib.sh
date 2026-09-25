@@ -1145,12 +1145,6 @@ fm_backlog_close_marker_remove() {  # <marker-path> <state-dir>
   fm_backlog_atomic_transition remove "$1" "pending-close record" "$2"
 }
 
-fm_backlog_close_marker_clear() {  # <state-dir> <id>
-  local marker
-  marker=$(fm_backlog_close_marker_path "$1" "$2") || return 1
-  fm_backlog_close_marker_remove "$marker" "$1"
-}
-
 # Replay one recorded close or retention. Returns 0 when the row is closed (or
 # retained), the marker is stale, or an answer already closed a retained row,
 # and 1 when marker validation or recovery fails. Validation completes before

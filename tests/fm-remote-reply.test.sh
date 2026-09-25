@@ -632,11 +632,13 @@ ESCALATED_CORR=$(fm_pending_reply_create "$PARENT" "$PARENT/state" ios 'confirm 
 [ -n "$ESCALATED_CORR" ] || fail "could not create the pending-reply record to escalate"
 fm_pending_reply_mark_delivered "$PARENT/state" "$ESCALATED_CORR" \
   || fail "could not mark the escalating request delivered"
-fm_pending_reply_mark_turn_completed "$PARENT/state" "$ESCALATED_CORR" request
+fm_pending_reply_observe_busy "$PARENT/state" "$ESCALATED_CORR" busy
+fm_pending_reply_observe_busy "$PARENT/state" "$ESCALATED_CORR" idle
 FM_PENDING_REPLY_SEND_HOOK=true \
   fm_pending_reply_send_recovery "$PARENT/state" "$ESCALATED_CORR" \
   || fail "the one automatic recovery repost was not sent"
-fm_pending_reply_mark_turn_completed "$PARENT/state" "$ESCALATED_CORR" recovery
+fm_pending_reply_observe_busy "$PARENT/state" "$ESCALATED_CORR" busy
+fm_pending_reply_observe_busy "$PARENT/state" "$ESCALATED_CORR" idle
 fm_pending_reply_maybe_escalate "$PARENT/state" "$ESCALATED_CORR" \
   || fail "the missed report did not escalate"
 assert_contains "$(status_open_decisions "$PARENT/state/ios.status")" \
@@ -729,10 +731,8 @@ pass "a quiet reply window publishes the caught-up watermark the reply guard rea
 # append adds no bytes, the adapter acknowledges the generation, and the
 # self-announcing runner publishes nothing - the replay stays completely
 # quiet, observed through the same seen-signature gate the watcher consumes.
-FM_STATE_OVERRIDE="$PARENT/state" bash -c '
-  . "$1/bin/fm-wake-lib.sh"
-  fm_wake_status_mark_current "$2/state" "$2/state/ios.status"
-' _ "$ROOT" "$PARENT" || fail "could not prime the seen marker for the replay leg"
+prime_status_seen "$PARENT/state" "$PARENT/state/ios.status" \
+  || fail "could not prime the seen marker for the replay leg"
 cp "$PARENT/state/ios.status" "$TMP_ROOT/ios-status-before-replay"
 mv "$PARENT/state/.wake-queue" "$TMP_ROOT/wake-queue-before-replay" 2>/dev/null || true
 rm -f "$PARENT/state/remote-replies/ios.cursor"

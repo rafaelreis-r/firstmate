@@ -109,7 +109,7 @@ test_routine_then_terminal_after_restart() {
   local sent
   sent="$dir/sent.log"; : > "$sent"
   printf '❯\n' > "$dir/pane.txt"
-  afk_enter "$state"
+  printf 'away\n' > "$state/.afk"
   PATH="$fakebin:$PATH" FM_FAKE_TMUX_PANE_ALIVE=1 FM_FAKE_TMUX_SENT="$sent" \
     FM_FAKE_TMUX_CAPTURE="$dir/pane.txt" FM_ESCALATE_BATCH_SECS=0 escalate_flush "$state" \
     || fail "escalate_flush failed for the buffered digest"

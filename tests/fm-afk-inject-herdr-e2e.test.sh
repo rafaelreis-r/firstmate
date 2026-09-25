@@ -61,7 +61,7 @@ LOOP_SCRIPT=
 
 cleanup_all() {
   if [ -n "${DAEMON_PID:-}" ]; then
-    afk_exit "${STATE_DIR:-}" 2>/dev/null || true
+    rm -f "${STATE_DIR:-}/.afk" 2>/dev/null || true
     kill "$DAEMON_PID" 2>/dev/null || true
     wait "$DAEMON_PID" 2>/dev/null || true
   fi
@@ -72,7 +72,7 @@ cleanup_all() {
 trap cleanup_all EXIT
 fm_herdr_lab_prepare "$SESSION" || fail "could not prepare isolated Herdr lab session"
 
-# --- source the daemon (for afk_enter/afk_exit/FM_INJECT_MARK) + the backend -
+# --- source the daemon (for FM_INJECT_MARK and the composer reader) + backend -
 # shellcheck source=/dev/null
 . "$DAEMON"
 fm_backend_source herdr || fail "fm_backend_source herdr failed"
@@ -294,7 +294,7 @@ start_daemon() {
 
 stop_daemon() {
   [ -n "${DAEMON_PID:-}" ] || return 0
-  afk_exit "$STATE_DIR" 2>/dev/null || true
+  rm -f "$STATE_DIR/.afk" 2>/dev/null || true
   kill "$DAEMON_PID" 2>/dev/null || true
   wait "$DAEMON_PID" 2>/dev/null || true
   DAEMON_PID=""
@@ -318,34 +318,34 @@ reset_state() {
   : > "$LOG_FILE"
 }
 
-# --- pane_input_pending environment self-check ------------------------------
-# Verify pane_input_pending (dispatched through fm_backend_composer_state for
-# backend=herdr) can detect typed text in THIS real herdr environment before
+# --- composer-state environment self-check ----------------------------------
+# Verify the composer reader inject_msg uses (fm_backend_composer_state for
+# backend=herdr) sees typed text as unsafe in THIS real herdr environment before
 # trusting the scenarios below to prove anything.
 
-selfcheck_pane_input_pending() {
+selfcheck_composer_pending() {
   local check_text="selfcheck-marker-12345"
   fm_backend_herdr_send_literal "$SUPERVISOR_TARGET" "$check_text" \
     || fail "selfcheck: could not send literal text to the scratch pane"
   sleep 0.5
-  if PATH="$HERDR_SHIM_DIR:$PATH" pane_input_pending "$SUPERVISOR_TARGET" herdr; then
+  if [ "$(PATH="$HERDR_SHIM_DIR:$PATH" fm_backend_composer_state herdr "$SUPERVISOR_TARGET" 2>/dev/null)" != empty ]; then
     fm_backend_herdr_send_key "$SUPERVISOR_TARGET" Enter
     sleep 0.5
     return 0
   fi
-  echo "pane_input_pending cannot detect typed text in this real-herdr environment" >&2
+  echo "the composer reader cannot detect typed text in this real-herdr environment" >&2
   fm_backend_herdr_capture "$SUPERVISOR_TARGET" 10 | sed 's/^/    /' >&2
   fm_backend_herdr_send_key "$SUPERVISOR_TARGET" Enter
-  fail "pane_input_pending self-check failed against real herdr"
+  fail "composer-state self-check failed against real herdr"
 }
 
-selfcheck_pane_input_pending
+selfcheck_composer_pending
 
 # --- Scenario A: human-partial-input ----------------------------------------
 
 test_scenario_a() {
   reset_state
-  afk_enter "$STATE_DIR"
+  printf 'away\n' > "$STATE_DIR/.afk"
   start_daemon
 
   fm_backend_herdr_send_literal "$SUPERVISOR_TARGET" "human draft text"
@@ -399,7 +399,7 @@ test_scenario_a() {
 
 test_scenario_b() {
   reset_state
-  afk_enter "$STATE_DIR"
+  printf 'away\n' > "$STATE_DIR/.afk"
 
   touch "$STATE_DIR/.swallow-enter"
 
@@ -435,7 +435,7 @@ test_scenario_b() {
 
 test_scenario_c() {
   reset_state
-  afk_enter "$STATE_DIR"
+  printf 'away\n' > "$STATE_DIR/.afk"
   start_daemon
 
   echo "done: PR https://example.test/pr/300" > "$STATE_DIR/fake-c1.status"
@@ -476,7 +476,7 @@ test_scenario_c() {
 
 test_scenario_d_max_defer() {
   reset_state
-  afk_enter "$STATE_DIR"
+  printf 'away\n' > "$STATE_DIR/.afk"
   local log_start=0
   [ ! -f "$STATE_DIR/.supervise-daemon.log" ] || log_start=$(wc -l < "$STATE_DIR/.supervise-daemon.log")
   # Persistent-pending composer: type real text and never submit it, so every

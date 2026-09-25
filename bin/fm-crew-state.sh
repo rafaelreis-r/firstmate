@@ -805,7 +805,7 @@ if [ "$HAVE_RUN" = 1 ]; then
     # No step/gate detail is available from the plain runs list - only ever
     # working, done, failed, or unknown. Gate detail requires the identity-aware
     # read above. The status event span remains independently available to the
-    # supervisor through fm-classify-lib.sh's status_span_first_actionable.
+    # supervisor through fm-classify-lib.sh's status_span_first_actionable_record.
     case "$COARSE_STATUS" in
       running)   RUN_STATE=working; RUN_DETAIL="validating (background run)" ;;
       completed) RUN_STATE="done";  RUN_DETAIL="run completed" ;;

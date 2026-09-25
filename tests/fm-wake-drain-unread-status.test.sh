@@ -248,8 +248,9 @@ test_retired_task_id_starts_new_status_unread() {
   [ "$offset" = 0 ] || fail "a retired file identity restored a stale offset after task reuse"
   event=$(bash -c '
     . "$1/bin/fm-classify-lib.sh"
-    status_span_first_actionable "$2/reused.status" "$3"
+    status_span_first_actionable_record "$2/reused.status" "$3"
   ' _ "$ROOT" "$state" "$offset")
+  event=${event#*$'\t'*$'\t'}
   [ "$event" = 'blocked: release host unavailable' ] \
     || fail "retired supervision offsets hid the replacement task blocker: $event"
 

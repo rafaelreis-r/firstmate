@@ -196,9 +196,14 @@ function statusLineNote(line: string): string {
 
 interface StaleDecisionCacheEntry {
   version: string;
-  config: string;
   decisionOwned: boolean;
 }
+
+// The status protocol's closing verbs and reserved key prefix, owned by
+// bin/fm-classify-lib.sh.
+const RESOLVE_VERB = "resolved";
+const CAPTAIN_HELD_VERB = "captain-held";
+const RESERVED_KEY_PREFIX = "pending-reply-";
 
 const staleDecisionCache = new Map<string, StaleDecisionCacheEntry>();
 
@@ -213,21 +218,16 @@ function statusFileVersion(path: string): string | null {
   }
 }
 
-function hasOpenNeedsDecision(
-  lines: readonly string[],
-  resolveVerb: string,
-  heldVerb: string,
-  reservedPrefixes: readonly string[],
-): boolean {
+function hasOpenNeedsDecision(lines: readonly string[]): boolean {
   const open = new Map<string, "needs-decision" | "blocked">();
   for (const line of lines) {
     const verb = statusLineVerb(line);
-    if (!["needs-decision", "blocked", resolveVerb, heldVerb].includes(verb)) continue;
+    if (!["needs-decision", "blocked", RESOLVE_VERB, CAPTAIN_HELD_VERB].includes(verb)) continue;
     const key = decisionKey(line);
     if (!key) continue;
     const note = statusLineNote(line);
-    const reservedPrefix = reservedPrefixes.find((prefix) => key.startsWith(prefix));
-    if (reservedPrefix && !(note.startsWith(reservedPrefix) && note.slice(reservedPrefix.length).includes(":"))) continue;
+    if (key.startsWith(RESERVED_KEY_PREFIX) &&
+      !(note.startsWith(RESERVED_KEY_PREFIX) && note.slice(RESERVED_KEY_PREFIX.length).includes(":"))) continue;
     if (verb === "needs-decision" || verb === "blocked") open.set(key, verb);
     else open.delete(key);
   }
@@ -278,12 +278,6 @@ export function scopeForUnreadWake(state: string, heartbeat: boolean, afk = fals
   const checkSeqs: string[] = [];
   const heartbeatSeqs: string[] = [];
   const staleDecisionOwnership = new Map<string, boolean>();
-  const resolveVerb = process.env.FM_CLASSIFY_RESOLVE_VERB || "resolved";
-  const heldVerb = process.env.FM_CLASSIFY_CAPTAIN_HELD_VERB || "captain-held";
-  const reservedPrefixes = (process.env.FM_CLASSIFY_RESERVED_KEY_PREFIXES || "pending-reply-")
-    .split(/\s+/)
-    .filter(Boolean);
-  const decisionConfig = `${resolveVerb}\0${heldVerb}\0${reservedPrefixes.join("\0")}`;
   for (const line of rows) {
     const fields = line.split("\t");
     if (fields.length < 5 || !/^[0-9]+$/.test(fields[1])) return UNSAFE_SCOPE;
@@ -341,7 +335,7 @@ export function scopeForUnreadWake(state: string, heartbeat: boolean, afk = fals
           let decisionOwned = false;
           if (version) {
             const cached = staleDecisionCache.get(statusPath);
-            if (cached?.version === version && cached.config === decisionConfig) {
+            if (cached?.version === version) {
               decisionOwned = cached.decisionOwned;
             } else {
               let statusLines: string[];
@@ -351,9 +345,9 @@ export function scopeForUnreadWake(state: string, heartbeat: boolean, afk = fals
               } catch {
                 return UNSAFE_SCOPE;
               }
-              decisionOwned = hasOpenNeedsDecision(statusLines, resolveVerb, heldVerb, reservedPrefixes) ||
-                statusLineVerb(statusLines.at(-1) ?? "") === heldVerb;
-              staleDecisionCache.set(statusPath, { version, config: decisionConfig, decisionOwned });
+              decisionOwned = hasOpenNeedsDecision(statusLines) ||
+                statusLineVerb(statusLines.at(-1) ?? "") === CAPTAIN_HELD_VERB;
+              staleDecisionCache.set(statusPath, { version, decisionOwned });
               if (staleDecisionCache.size > 512) {
                 staleDecisionCache.delete(staleDecisionCache.keys().next().value!);
               }

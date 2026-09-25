@@ -28,8 +28,7 @@
 #   7. Flag misuse (--key, empty message, explicit backend target) refuses.
 #   8. A reserved pending-reply-* decision actually closes through --resolve-key
 #      (the operator path the OPEN DECISIONS hint names), while an unrelated
-#      writer's answered: note still cannot hijack or clear that key. A reserved
-#      key this send cannot close refuses before anything is sent.
+#      writer's answered: note still cannot hijack or clear that key.
 set -u
 
 # shellcheck source=tests/lib.sh
@@ -156,10 +155,7 @@ test_answer_close_is_self_announced() {
   home=$(setup_home self-announced)
   fm_write_meta "$home/state/t9.meta" "window=sess:fm-t9" "kind=ship"
   printf 'needs-decision [key=port-choice]: 8080 or 9090\n' > "$home/state/t9.status"
-  FM_STATE_OVERRIDE="$home/state" bash -c '
-    . "$1"
-    fm_wake_status_mark_current "$2" "$3"
-  ' _ "$ROOT/bin/fm-wake-lib.sh" "$home/state" "$home/state/t9.status" \
+  prime_status_seen "$home/state" "$home/state/t9.status" \
     || fail "could not prime the announced baseline"
 
   run_send "$fb" "$home" "$log" t9 --resolve-key port-choice "use 9090"; rc=$?
@@ -611,34 +607,6 @@ test_unrelated_writer_cannot_close_or_hijack_reserved_key() {
   pass "fm-send --resolve-key: an unrelated writer cannot close or hijack a reserved key, and the operator close still can"
 }
 
-test_unclosable_reserved_key_refuses_before_send() {
-  local dir fb log home err rc out
-  dir="$TMP_ROOT/reserved-refuse"; mkdir -p "$dir"
-  fb=$(make_stubs "$dir"); log="$dir/send.log"; err="$dir/send.err"
-  home=$(setup_home reserved-refuse)
-  fm_write_meta "$home/state/t1.meta" "window=sess:fm-t1" "kind=ship"
-  printf 'blocked [key=secret-abc]: secret-held: keep this\n' > "$home/state/t1.status"
-
-  : > "$log"
-  env PATH="$fb:$PATH" \
-    FM_ROOT_OVERRIDE="$home" FM_HOME="$home" FM_SEND_LOG="$log" FM_SEND_SETTLE=0 \
-    FM_CLASSIFY_RESERVED_KEY_PREFIXES='pending-reply- secret-' \
-    "$SEND" t1 --resolve-key secret-abc "this must not silently no-op" >/dev/null 2>"$err"; rc=$?
-  [ "$rc" -ne 0 ] || fail "a reserved key this send cannot close should refuse"
-  assert_contains "$(cat "$err")" "--resolve-key 'secret-abc'" "the refusal should name the reserved key"
-  assert_contains "$(cat "$err")" "cannot take effect" "the refusal should say the close cannot take effect"
-  assert_contains "$(cat "$err")" "nothing was sent" "the refusal should state nothing was sent"
-  [ ! -s "$log" ] || fail "a refused reserved-key close still typed text: $(cat "$log")"
-  [ ! -d "$home/state/t1.inbox" ] || fail "a refused reserved-key close still enqueued an inbox record"
-  if grep -F 'resolved' "$home/state/t1.status" >/dev/null; then
-    fail "a refused reserved-key close still wrote a resolved line: $(cat "$home/state/t1.status")"
-  fi
-  out=$(drain_out "$home")
-  printf '%s' "$out" | grep -F '[key=secret-abc]' >/dev/null \
-    || fail "the reserved decision disappeared after a refused close: $out"
-  pass "fm-send --resolve-key: a reserved key this send cannot close refuses loudly before anything is sent"
-}
-
 test_long_decision_key_refuses_before_send() {
   local dir fb log home err key rc out
   dir="$TMP_ROOT/long-key"; mkdir -p "$dir"
@@ -801,7 +769,6 @@ test_remote_transport_failure_does_not_close
 test_flag_misuse_refuses
 test_reserved_pending_reply_key_closes_through_resolve_key
 test_unrelated_writer_cannot_close_or_hijack_reserved_key
-test_unclosable_reserved_key_refuses_before_send
 test_long_decision_key_refuses_before_send
 test_failed_close_recovery_command_is_shell_safe
 test_remote_reserved_pending_reply_key_closes_locally

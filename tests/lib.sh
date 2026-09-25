@@ -541,6 +541,21 @@ fm_write_secondmate_meta() {
     "projects=$projects"
 }
 
+# Mark a status log fully presented, the way the watcher records it after
+# surfacing a signal: commit the seen marker through the watcher's own primitive
+# (fm_wake_status_seen_commit, bin/fm-wake-lib.sh) at the log's current end and
+# identity. A test then exercises the next wake, self-announced append, or
+# annotation decision from an "everything already surfaced" baseline.
+prime_status_seen() {  # <state> <status-file>
+  FM_STATE_OVERRIDE="$1" bash -c '
+    . "$1/bin/fm-wake-lib.sh"
+    _fm_wake_require_classify || exit 1
+    size=$(_fm_status_file_size "$3") || exit 1
+    ident=$(_fm_open_decisions_file_ident "$3") || exit 1
+    fm_wake_status_seen_commit "$2" "$3" "$size" "$ident"
+  ' _ "$ROOT" "$1" "$2"
+}
+
 # --- common assertions ------------------------------------------------------
 
 # assert_equals <expected> <actual> <msg>

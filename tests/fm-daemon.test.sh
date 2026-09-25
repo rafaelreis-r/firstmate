@@ -1399,7 +1399,7 @@ test_escalate_batches_into_one_digest() {
   capture="$dir/pane.txt"; printf '\342\235\257 \n' > "$capture"  # a proven-empty bare claude composer: STRICT injection needs positive proof
   escalate_add "$state" "event A: done: PR 1"
   escalate_add "$state" "event B: done: PR 2"
-  afk_enter "$state"
+  printf 'away\n' > "$state/.afk"
   PATH="$fakebin:$PATH" FM_FAKE_TMUX_PANE_ALIVE=1 FM_FAKE_TMUX_SENT="$sent" \
     FM_FAKE_TMUX_CAPTURE="$capture" FM_ESCALATE_BATCH_SECS=0 escalate_flush "$state" \
     || fail "escalate_flush failed"
@@ -1426,7 +1426,7 @@ test_escalate_batch_age_uses_first_append() {
   escalate_add "$state" "event A: done: PR 1"
   escalate_add "$state" "event B: done: PR 2"
   echo $(( $(date +%s) - 100 )) > "$state/.subsuper-escalations.since"
-  afk_enter "$state"
+  printf 'away\n' > "$state/.afk"
   PATH="$fakebin:$PATH" FM_FAKE_TMUX_PANE_ALIVE=1 FM_FAKE_TMUX_SENT="$sent" \
     FM_FAKE_TMUX_CAPTURE="$capture" FM_ESCALATE_BATCH_SECS=90 FM_HOUSEKEEPING_TICK=0 \
     housekeeping "$state"
@@ -1676,7 +1676,7 @@ test_busy_guard_defers_when_supervisor_busy() {
   capture="$dir/pane.txt"
   printf 'esc to interrupt\n' > "$capture"
   escalate_add "$state" "done: PR 1"
-  afk_enter "$state"
+  printf 'away\n' > "$state/.afk"
   if PATH="$fakebin:$PATH" FM_FAKE_TMUX_PANE_ALIVE=1 FM_FAKE_TMUX_SENT="$sent" \
     FM_FAKE_TMUX_CAPTURE="$capture" FM_ESCALATE_BATCH_SECS=0 escalate_flush "$state"; then
     fail "escalate_flush should defer when supervisor pane busy"
@@ -1693,134 +1693,27 @@ test_marker_detection() {
     || fail "FM_INJECT_MARK must use terminal-safe U+2063 bytes, got $marker_hex"
   [ "$FM_OPERATIONAL_PREFIX" = "${FM_INJECT_MARK}FIRSTMATE_OP: " ] \
     || fail "away-mode operational prefix drifted from the shared captain-boundary marker"
-  # message_is_injection: marker present -> injection; absent -> real message
-  message_is_injection "${FM_OPERATIONAL_PREFIX}Supervisor escalate: done" \
-    || fail "operationally-prefixed message not detected as injection"
-  message_is_injection "${FM_INJECT_MARK}Supervisor escalate: done" \
-    || fail "legacy marker-prefixed message not detected as injection"
-  message_is_injection "how's it going?" \
-    && fail "plain message misdetected as injection"
-  message_is_injection "" && fail "empty message misdetected as injection"
-  # should_exit_afk: the full afk-exit contract
-  local dir state
-  dir=$(make_supercase marker-detect)
-  state="$dir/state"
-  afk_enter "$state"
-  should_exit_afk "$state" "${FM_INJECT_MARK}escalate" \
-    && fail "marker message should not exit afk (internal escalation)"
-  should_exit_afk "$state" "status update please" \
-    || fail "plain message should exit afk (captain is back)"
-  pass "marker detection: marker -> stay afk, no marker -> exit afk"
+  pass "the away-mode marker keeps its terminal-safe bytes and shared operational prefix"
 }
 
-test_afk_turn_exemption() {
-  local dir state
-  dir=$(make_supercase afk-exempt)
-  state="$dir/state"
-  afk_enter "$state"
-  # /afk while already away must NOT self-cancel (re-entering/extending)
-  should_exit_afk "$state" "/afk" \
-    && fail "bare /afk should not exit afk"
-  should_exit_afk "$state" "/afk back in an hour" \
-    && fail "/afk with args should not exit afk"
-  # a non-/afk skill invocation DOES exit (the captain is actively working)
-  should_exit_afk "$state" "/no-mistakes" \
-    || fail "non-afk skill should exit afk"
-  pass "/afk invocation is exempt from afk exit (no self-cancel)"
-}
-
-test_should_exit_afk_when_afk_inactive() {
-  local dir state
-  dir=$(make_supercase no-afk)
-  state="$dir/state"
-  # afk flag absent: should never signal exit (nothing to exit)
-  should_exit_afk "$state" "hello" \
-    && fail "should_exit_afk true when afk inactive"
-  should_exit_afk "$state" "${FM_INJECT_MARK}test" \
-    && fail "should_exit_afk true when afk inactive (marker)"
-  pass "should_exit_afk returns false when afk is not active"
-}
-
-test_strip_injection_marker() {
-  local encoded stripped
-  fm_operational_input_encode away-supervisor "Supervisor escalate: done" encoded \
-    || fail "could not encode current away fixture"
-  stripped=$(strip_injection_marker "$encoded")
-  [ "$stripped" = "Supervisor escalate: done" ] \
-    || fail "current typed operational envelope not stripped: '$stripped'"
-  stripped=$(strip_injection_marker "${FM_OPERATIONAL_PREFIX}Supervisor escalate: done")
-  [ "$stripped" = "Supervisor escalate: done" ] \
-    || fail "landed untyped operational prefix not stripped: '$stripped'"
-  stripped=$(strip_injection_marker "${FM_INJECT_MARK}Supervisor escalate: done")
-  [ "$stripped" = "Supervisor escalate: done" ] \
-    || fail "legacy marker not stripped: '$stripped'"
-  # No marker → unchanged.
-  stripped=$(strip_injection_marker "no marker here")
-  [ "$stripped" = "no marker here" ] \
-    || fail "non-marker text changed: '$stripped'"
-  # Empty → empty.
-  stripped=$(strip_injection_marker "")
-  [ "$stripped" = "" ] || fail "empty text changed: '$stripped'"
-  # Only marker → empty.
-  stripped=$(strip_injection_marker "$FM_INJECT_MARK")
-  [ "$stripped" = "" ] || fail "bare marker not stripped: '$stripped'"
-  pass "strip_injection_marker removes the sentinel marker cleanly"
-}
-
-test_pane_input_pending_detects_partial_input() {
-  local dir state fakebin capture
-  dir=$(make_supercase pending-input)
-  state="$dir/state"
-  fakebin="$dir/fakebin"
-  capture="$dir/pane.txt"
-  # Line 3 (cursor_y=2) has human's partial text (no Enter) → pending.
-  printf 'line one\nline two\nhuman draft text\n' > "$capture"
-  PATH="$fakebin:$PATH" FM_FAKE_TMUX_CAPTURE="$capture" FM_FAKE_TMUX_CURSOR_Y=2 \
-    pane_input_pending "fakepane" \
-    || fail "pane_input_pending should detect non-empty composer (human text)"
-  pass "pane_input_pending detects partial input on the cursor line"
-}
-
-test_pane_input_pending_blank_defers_strict() {
+test_tmux_composer_state_blank_row_is_unknown() {
   # THE STRICT BLANK-ROW RULE (captain decision blank-row-injection-posture,
   # 2026-08-09): a blank cursor row with no positive container proof is
   # `unknown` and the injector DEFERS. The permissive rule this replaced read
   # the same row as `empty` and injected - into whatever the blank row really
   # was (a modal dialog, a dead shell between stale transcript rules, a
   # mid-redraw pane). This assertion IS the posture divergence: if it ever
-  # reads not-pending again, the permissive rule has silently returned.
-  local dir state fakebin capture
+  # reads empty again, the permissive rule has silently returned.
+  local dir fakebin capture out
   dir=$(make_supercase pending-blank)
-  state="$dir/state"
   fakebin="$dir/fakebin"
   capture="$dir/pane.txt"
   printf 'some output\nmore output\n\n' > "$capture"
-  PATH="$fakebin:$PATH" FM_FAKE_TMUX_CAPTURE="$capture" FM_FAKE_TMUX_CURSOR_Y=2 \
-    pane_input_pending "fakepane" \
-    || fail "a blank unidentified cursor row must defer under the strict rule, not read empty"
-  pass "pane_input_pending: a blank unidentified cursor row defers (strict container-proof rule)"
-}
-
-test_pane_input_pending_requires_proven_empty_prompt() {
-  local dir state fakebin capture prompt
-  dir=$(make_supercase pending-prompt)
-  state="$dir/state"
-  fakebin="$dir/fakebin"
-  capture="$dir/pane.txt"
-  for prompt in '$' '>'; do
-    printf 'output\noutput\n%s \n' "$prompt" > "$capture"
-    PATH="$fakebin:$PATH" FM_FAKE_TMUX_CAPTURE="$capture" FM_FAKE_TMUX_CURSOR_Y=2 \
-      pane_input_pending "fakepane" \
-      || fail "bare shell prompt '$prompt' should defer as unknown"
-  done
-  for prompt in '❯' '›'; do
-    printf 'output\noutput\n%s \n' "$prompt" > "$capture"
-    if PATH="$fakebin:$PATH" FM_FAKE_TMUX_CAPTURE="$capture" FM_FAKE_TMUX_CURSOR_Y=2 \
-      pane_input_pending "fakepane"; then
-      fail "proven empty agent prompt '$prompt' should not defer"
-    fi
-  done
-  pass "pane_input_pending: only proven empty agent prompts pass"
+  out=$(PATH="$fakebin:$PATH" FM_FAKE_TMUX_CAPTURE="$capture" FM_FAKE_TMUX_CURSOR_Y=2 \
+    fm_tmux_composer_state "fakepane")
+  [ "$out" = unknown ] \
+    || fail "a blank unidentified cursor row must read unknown under the strict rule, got '$out'"
+  pass "fm_tmux_composer_state: a blank unidentified cursor row reads unknown (strict container-proof rule)"
 }
 
 # The safety fix at the tmux classifier (task fm-composer-shellglyph-safety): a
@@ -1878,16 +1771,17 @@ test_tmux_composer_state_requires_matching_box_borders() {
   pass "fm_tmux_composer_state: only matching edge borders form a composer box"
 }
 
-test_pane_input_pending_preserves_bright_placeholder_like_draft() {
-  local dir fakebin capture
+test_tmux_composer_state_preserves_bright_placeholder_like_draft() {
+  local dir fakebin capture out
   dir=$(make_supercase pending-custom-idle)
   fakebin="$dir/fakebin"
   capture="$dir/pane.txt"
   printf '╭────────────────╮\n│ custom idle>   │\n╰────────────────╯\n' > "$capture"
-  PATH="$fakebin:$PATH" FM_FAKE_TMUX_CAPTURE="$capture" FM_FAKE_TMUX_CURSOR_Y=1 \
-    FM_COMPOSER_IDLE_RE='^custom idle>$' pane_input_pending "fakepane" \
-    || fail "bright placeholder-like input must remain pending in a styled capture"
-  pass "pane_input_pending preserves bright placeholder-like drafts in styled captures"
+  out=$(PATH="$fakebin:$PATH" FM_FAKE_TMUX_CAPTURE="$capture" FM_FAKE_TMUX_CURSOR_Y=1 \
+    FM_COMPOSER_IDLE_RE='^custom idle>$' fm_tmux_composer_state "fakepane")
+  [ "$out" = pending ] \
+    || fail "bright placeholder-like input must remain pending in a styled capture, got '$out'"
+  pass "fm_tmux_composer_state preserves bright placeholder-like drafts in styled captures"
 }
 
 test_classify_signal_dedup_against_scan() {
@@ -1984,39 +1878,38 @@ test_afk_genuine_done_still_terminal_stale() {
   pass "genuine done: and merge-check events still escalate"
 }
 
-test_pane_input_pending_bordered_idle_not_pending() {
+test_tmux_composer_state_bordered_idle_is_empty() {
   # THE regression: an idle claude composer is a bordered box ("│ > … │"). The
   # old idle regex only matched a BARE prompt, so every idle claude pane read as
   # pending and the away-mode daemon deferred 100% of escalations for 9.5h.
-  local dir state fakebin capture line
+  local dir fakebin capture line out
   dir=$(make_supercase pending-bordered-idle)
-  state="$dir/state"; fakebin="$dir/fakebin"; capture="$dir/pane.txt"
+  fakebin="$dir/fakebin"; capture="$dir/pane.txt"
   for line in '>' '❯' ''; do
     case "$line" in
       '>') printf '╭────────────╮\n│ >          │\n╰────────────╯\n' > "$capture" ;;
       '❯') printf '╭────────────╮\n│ ❯          │\n╰────────────╯\n' > "$capture" ;;
       '') printf '╭────────────╮\n│            │\n╰────────────╯\n' > "$capture" ;;
     esac
-    if PATH="$fakebin:$PATH" FM_FAKE_TMUX_CAPTURE="$capture" FM_FAKE_TMUX_CURSOR_Y=1 \
-      pane_input_pending "fakepane"; then
-      fail "bordered idle composer falsely detected as pending: <$line>"
-    fi
+    out=$(PATH="$fakebin:$PATH" FM_FAKE_TMUX_CAPTURE="$capture" FM_FAKE_TMUX_CURSOR_Y=1 \
+      fm_tmux_composer_state "fakepane")
+    [ "$out" = empty ] || fail "bordered idle composer <$line> should read empty, got '$out'"
   done
-  pass "pane_input_pending: an idle bordered composer is NOT pending (afk-invx-i5)"
+  pass "fm_tmux_composer_state: an idle bordered composer reads empty (afk-invx-i5)"
 }
 
-test_pane_input_pending_bordered_with_text_is_pending() {
+test_tmux_composer_state_bordered_with_text_is_pending() {
   # Guard against over-broadening: real unsubmitted text inside the box must
   # still read as pending so the daemon defers (and the captain-return race is
   # still protected).
-  local dir state fakebin capture
+  local dir fakebin capture out
   dir=$(make_supercase pending-bordered-text)
-  state="$dir/state"; fakebin="$dir/fakebin"; capture="$dir/pane.txt"
+  fakebin="$dir/fakebin"; capture="$dir/pane.txt"
   printf '╭────────────────────────────────────────────────╮\n│ > fix findings 1 and 3, skip 2                 │\n╰────────────────────────────────────────────────╯\n' > "$capture"
-  PATH="$fakebin:$PATH" FM_FAKE_TMUX_CAPTURE="$capture" FM_FAKE_TMUX_CURSOR_Y=1 \
-    pane_input_pending "fakepane" \
-    || fail "real text inside a bordered composer was not detected as pending"
-  pass "pane_input_pending: text inside a bordered composer is still pending"
+  out=$(PATH="$fakebin:$PATH" FM_FAKE_TMUX_CAPTURE="$capture" FM_FAKE_TMUX_CURSOR_Y=1 \
+    fm_tmux_composer_state "fakepane")
+  [ "$out" = pending ] || fail "real text inside a bordered composer should read pending, got '$out'"
+  pass "fm_tmux_composer_state: text inside a bordered composer is still pending"
 }
 
 test_submit_ack_confirms_on_bordered_empty_composer() {
@@ -2059,7 +1952,7 @@ test_max_defer_empty_swallow_types_once_and_alarms() {
   touch "$dir/.swallow"
   escalate_add "$state" "needs-decision: pick A"
   echo $(( $(date +%s) - 600 )) > "$state/.subsuper-escalations.since"
-  afk_enter "$state"
+  printf 'away\n' > "$state/.afk"
   PATH="$fakebin:$PATH" FM_FAKE_COMPOSER="$dir/composer" FM_FAKE_SENT="$sent" \
     FM_FAKE_SWALLOW="$dir/.swallow" FM_FAKE_PERSIST_SWALLOW=1 FM_INJECT_CONFIRM_SLEEP=0.05 \
     FM_ESCALATE_BATCH_SECS=99999 FM_MAX_DEFER_SECS=60 housekeeping "$state"
@@ -2080,7 +1973,7 @@ test_max_defer_flushes_empty_idle_pane() {
   printf '╭─────╮\n│ >   │\n╰─────╯\n' > "$dir/composer"
   escalate_add "$state" "done: PR https://x/y/pull/1"
   echo $(( $(date +%s) - 600 )) > "$state/.subsuper-escalations.since"
-  afk_enter "$state"
+  printf 'away\n' > "$state/.afk"
   PATH="$fakebin:$PATH" FM_FAKE_COMPOSER="$dir/composer" FM_FAKE_SENT="$sent" \
     FM_ESCALATE_BATCH_SECS=99999 FM_MAX_DEFER_SECS=60 FM_INJECT_CONFIRM_SLEEP=0.05 \
     housekeeping "$state"
@@ -2097,7 +1990,7 @@ test_max_defer_pending_composer_alarms_without_typing() {
   printf '╭─────────────────╮\n│ > human draft   │\n╰─────────────────╯\n' > "$dir/composer"
   escalate_add "$state" "needs-decision: pick B"
   echo $(( $(date +%s) - 600 )) > "$state/.subsuper-escalations.since"
-  afk_enter "$state"
+  printf 'away\n' > "$state/.afk"
   PATH="$fakebin:$PATH" FM_FAKE_COMPOSER="$dir/composer" FM_FAKE_SENT="$sent" \
     FM_ESCALATE_BATCH_SECS=99999 FM_MAX_DEFER_SECS=60 FM_INJECT_CONFIRM_SLEEP=0.05 \
     housekeeping "$state"
@@ -2115,7 +2008,7 @@ test_normal_flush_clears_stale_wedge_marker() {
   sent="$dir/sent.log"; : > "$sent"
   printf 'old wedge\n' > "$state/.subsuper-inject-wedged"
   escalate_add "$state" "done: PR https://x/y/pull/2"
-  afk_enter "$state"
+  printf 'away\n' > "$state/.afk"
   PATH="$fakebin:$PATH" FM_FAKE_COMPOSER="$dir/composer" FM_FAKE_SENT="$sent" \
     FM_INJECT_CONFIRM_SLEEP=0.05 escalate_flush "$state" \
     || fail "normal escalate_flush failed"
@@ -2132,7 +2025,7 @@ test_below_max_defer_does_nothing() {
   capture="$dir/pane.txt"; printf 'stuck junk line\n' > "$capture"
   escalate_add "$state" "needs-decision: pick A"
   date +%s > "$state/.subsuper-escalations.since"   # just now
-  afk_enter "$state"
+  printf 'away\n' > "$state/.afk"
   PATH="$fakebin:$PATH" FM_FAKE_TMUX_PANE_ALIVE=1 FM_FAKE_TMUX_SENT="$sent" \
     FM_FAKE_TMUX_CAPTURE="$capture" FM_FAKE_TMUX_CURSOR_Y=0 \
     FM_ESCALATE_BATCH_SECS=99999 FM_MAX_DEFER_SECS=300 housekeeping "$state"
@@ -2624,30 +2517,11 @@ test_pane_is_busy_defaults_to_tmux_when_backend_omitted() {
   pass "pane_is_busy: omitted backend defaults to tmux for Grok's isolated fallback"
 }
 
-test_pane_input_pending_herdr_dispatch() {
-  (
-    fm_backend_composer_state() { [ "$1" = herdr ] && [ "$2" = "default:w1:p2" ] || fail "unexpected composer_state args: $1 $2"; printf 'pending'; }
-    pane_input_pending "default:w1:p2" herdr || fail "pane_input_pending should report pending from herdr composer_state"
-  ) || fail "herdr pane_input_pending (pending case) subshell failed"
-  (
-    fm_backend_composer_state() { printf 'empty'; }
-    if pane_input_pending "default:w1:p2" herdr; then
-      fail "pane_input_pending should report not-pending for an empty herdr composer"
-    fi
-  ) || fail "herdr pane_input_pending (empty case) subshell failed"
-  (
-    fm_backend_composer_state() { printf 'future-state'; }
-    pane_input_pending "default:w1:p2" herdr \
-      || fail "pane_input_pending should defer on an unrecognized composer state"
-  ) || fail "herdr pane_input_pending (future-state case) subshell failed"
-  pass "pane_input_pending: dispatches through fm_backend_composer_state for backend=herdr"
-}
-
 test_inject_msg_herdr_busy_guard_defers() {
   local dir state
   dir=$(make_supercase inject-herdr-busy)
   state="$dir/state"
-  afk_enter "$state"
+  printf 'away\n' > "$state/.afk"
   (
     fm_backend_target_exists() { [ "$1" = herdr ] && [ "$2" = "default:w1:p2" ] || fail "unexpected target_exists args: $1 $2"; return 0; }
     pane_is_busy() { return 0; }
@@ -2664,7 +2538,7 @@ test_inject_msg_herdr_composer_guard_defers() {
   local dir state
   dir=$(make_supercase inject-herdr-pending)
   state="$dir/state"
-  afk_enter "$state"
+  printf 'away\n' > "$state/.afk"
   (
     fm_backend_target_exists() { return 0; }
     pane_is_busy() { return 1; }
@@ -2681,7 +2555,7 @@ test_inject_msg_herdr_pane_gone_defers() {
   local dir state
   dir=$(make_supercase inject-herdr-gone)
   state="$dir/state"
-  afk_enter "$state"
+  printf 'away\n' > "$state/.afk"
   (
     fm_backend_target_exists() { return 1; }
     pane_is_busy() { fail "busy guard should not be consulted once the pane-exists check already failed"; }
@@ -2702,7 +2576,7 @@ test_inject_msg_defers_on_dead_shell_unknown() {
   local dir state
   dir=$(make_supercase inject-dead-shell)
   state="$dir/state"
-  afk_enter "$state"
+  printf 'away\n' > "$state/.afk"
   (
     fm_backend_target_exists() { return 0; }
     pane_is_busy() { return 1; }
@@ -2719,7 +2593,7 @@ test_inject_msg_defers_on_unrecognized_composer_state() {
   local dir state
   dir=$(make_supercase inject-future-composer-state)
   state="$dir/state"
-  afk_enter "$state"
+  printf 'away\n' > "$state/.afk"
   (
     fm_backend_target_exists() { return 0; }
     pane_is_busy() { return 1; }
@@ -2781,16 +2655,11 @@ test_collapse_newlines_pure
 test_afk_absent_daemon_does_not_inject
 test_busy_guard_defers_when_supervisor_busy
 test_marker_detection
-test_afk_turn_exemption
-test_should_exit_afk_when_afk_inactive
-test_strip_injection_marker
-test_pane_input_pending_detects_partial_input
-test_pane_input_pending_blank_defers_strict
-test_pane_input_pending_requires_proven_empty_prompt
+test_tmux_composer_state_blank_row_is_unknown
 test_tmux_composer_state_bare_shell_is_unknown
 test_tmux_composer_state_bordered_and_agent_rows_are_empty
 test_tmux_composer_state_requires_matching_box_borders
-test_pane_input_pending_preserves_bright_placeholder_like_draft
+test_tmux_composer_state_preserves_bright_placeholder_like_draft
 test_classify_signal_dedup_against_scan
 test_classify_signal_skips_turn_end_markers
 test_classify_signal_survives_a_later_routine_append
@@ -2812,8 +2681,8 @@ test_catchall_scan_surfaces_a_masked_event
 test_classify_stale_dedup_against_signal
 test_afk_nonterminal_working_merged_keeps_wedge_aging
 test_afk_genuine_done_still_terminal_stale
-test_pane_input_pending_bordered_idle_not_pending
-test_pane_input_pending_bordered_with_text_is_pending
+test_tmux_composer_state_bordered_idle_is_empty
+test_tmux_composer_state_bordered_with_text_is_pending
 test_submit_ack_confirms_on_bordered_empty_composer
 test_submit_ack_reports_pending_on_persistent_swallow
 test_max_defer_empty_swallow_types_once_and_alarms
@@ -2849,7 +2718,6 @@ test_discover_supervisor_target_herdr
 test_pane_is_busy_herdr_native_busy_state
 test_primary_busy_guard_is_harness_scoped
 test_pane_is_busy_defaults_to_tmux_when_backend_omitted
-test_pane_input_pending_herdr_dispatch
 test_inject_msg_herdr_busy_guard_defers
 test_inject_msg_herdr_composer_guard_defers
 test_inject_msg_herdr_pane_gone_defers

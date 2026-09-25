@@ -158,14 +158,13 @@
 # OPEN DECISIONS record closes at answer time and never depends on the busy
 # worker writing a matching resolved line. Ordinary keys close with
 # "resolved [key=<key>]: answered: <capped excerpt>". A reserved key
-# (pending-reply-* today; bin/fm-classify-lib.sh's reserved-key guard) is
-# closed with the owning library's vocabulary note
+# (pending-reply-*; bin/fm-classify-lib.sh's reserved-key guard) is closed
+# with the owning library's vocabulary note
 # (fm_pending_reply_close_note_for_key / fm_pending_reply_resolved_note), so
 # the fold actually drops it; a bare answered: note is not a reserved-key
-# transition and is never written for those keys. If this send cannot produce
-# a note the guard will accept, or the structural key would be lost to the
-# status-line cap, it refuses before sending and names the cause rather than
-# exiting 0 on a silent no-op. After a delivered close it also
+# transition and is never written for those keys. If the structural key would
+# be lost to the status-line cap, it refuses before sending and names the
+# cause rather than exiting 0 on a silent no-op. After a delivered close it also
 # re-folds and fails loudly if the named key is still open. On the inbox plane
 # the close happens at ENQUEUE time, because enqueue is durable delivery to
 # the task's record; the worker reading the answer late is covered by the
@@ -659,15 +658,11 @@ if [ -n "$RESOLVE_KEYS" ]; then
   if [ "$RESOLVE_IS_DECISION" -eq 1 ]; then
     fm_lease_forbid_branch "decision answer (fm-send --resolve-key)" --away-relocated
   fi
-  # Refuse before send when a named status-log key cannot actually close: a
-  # reserved key with an answered: note is a silent no-op in the fold.
+  # Refuse before send when a named status-log key's close record cannot fit
+  # the status-line cap with its key intact.
   resolve_excerpt=$(printf '%s' "$*" | tr '\n\r\t' '   ' | LC_ALL=C tr -d '\000-\037\177')
   for k in $RESOLVE_STATUS_KEYS; do
     probe=$(fm_send_resolve_close_note "$k" "$resolve_excerpt")
-    if ! _fm_decision_key_transition_allowed "$k" "$probe"; then
-      echo "error: --resolve-key '$k' cannot take effect: this key is reserved for its owning library, and this send cannot produce a close note that library's fold will accept. Refusing rather than writing a silent no-op; nothing was sent." >&2
-      exit 1
-    fi
     probe_line="resolved [key=$k]: $probe"
     fm_cap_line_var "$probe_line"
     probe_key=$(_fm_decision_key "$FM_LINE_CAP_LINE") || probe_key=

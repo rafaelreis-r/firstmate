@@ -179,12 +179,6 @@ EOF
   return 1
 }
 
-# fm_pane_input_pending: 0 when the composer is not proven empty, so pending
-# text, ambiguous structure, unreadable state, and future verdicts all defer.
-fm_pane_input_pending() {  # <target>
-  [ "$(fm_tmux_composer_state "$1")" != empty ]
-}
-
 # fm_pane_is_busy: 0 if the pane's last few non-blank lines show a busy footer
 # (an agent mid-turn). Scans a 40-line tail like fm-watch.sh.
 fm_pane_busy_state() {  # <target> [harness] -> busy|idle|unknown

@@ -614,7 +614,7 @@ fm_backend_cmux_window_of_workspace() {  # <workspace_id> -> "<window_id> <count
 # The reliable primitive is close-workspace on a NON-last workspace, so when the
 # target is the last one in its window a throwaway sibling is created first,
 # leaving that window a fresh default workspace (never an fm-<home>- title, so
-# recovery/list_live ignore it) - cmux's own "closed the last tab" outcome.
+# no task label matches it) - cmux's own "closed the last tab" outcome.
 fm_backend_cmux_kill() {  # <target> [unused] [expected-label]
   local expected_label=${3:-} wsid wininfo win count
   if [ -n "$expected_label" ]; then
@@ -630,24 +630,4 @@ fm_backend_cmux_kill() {  # <target> [unused] [expected-label]
     fm_backend_cmux_cli new-workspace --window "$win" --focus false --id-format uuids >/dev/null 2>&1 || true
   fi
   fm_backend_cmux_cli close-workspace --workspace "$wsid" >/dev/null 2>&1 || true
-}
-
-# fm_backend_cmux_list_live: recovery/orphan discovery. Lists every workspace
-# whose title is scoped to this firstmate home, by TITLE - never by trusting a
-# stored uuid, since workspace ids do NOT survive an app relaunch (finding #5).
-# One "<workspace_id>:<surface_id>\t<fm-id>" line per live task workspace.
-# Read-only: an unreachable cmux simply lists nothing.
-fm_backend_cmux_list_live() {
-  local wss wsid title sfid home prefix plain
-  home=$(fm_backend_cmux_home_label)
-  prefix="fm-$home-"
-  wss=$(fm_backend_cmux_cli workspace list --json --id-format uuids 2>/dev/null) || return 0
-  while IFS=$'\t' read -r wsid title; do
-    [ -n "$wsid" ] || continue
-    plain=${title#"$prefix"}
-    [ -n "$plain" ] || continue
-    sfid=$(fm_backend_cmux_surface_id_for_workspace "$wsid")
-    [ -n "$sfid" ] || continue
-    printf '%s:%s\tfm-%s\n' "$wsid" "$sfid" "$plain"
-  done < <(printf '%s' "$wss" | jq -r --arg prefix "$prefix" '.workspaces[]? | select(.title | startswith($prefix)) | "\(.id)\t\(.title)"' 2>/dev/null)
 }

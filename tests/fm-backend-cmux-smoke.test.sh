@@ -37,10 +37,8 @@ PING_STATE=$(fm_backend_cmux_ping_state)
 . "$ROOT/tests/cmux-test-safety.sh"
 
 WS1=""
-WS2=""
 cleanup_all() {
   [ -z "$WS1" ] || cmux_safe_close_workspace "$WS1" "fm-test-smoke1"
-  [ -z "$WS2" ] || cmux_safe_close_workspace "$WS2" "fm-test-smoke2"
 }
 trap cleanup_all EXIT
 
@@ -169,20 +167,6 @@ WS1=""
 # Best-effort contract: killing an already-gone target must not error.
 fm_backend_cmux_kill "$TARGET" || fail "kill on an already-dead target must stay best-effort (never fail)"
 pass "real cmux: kill removes the whole workspace and is idempotent/best-effort"
-
-# --- list_live (title-based recovery discovery) ------------------------------
-
-LABEL2="fm-test-smoke2"
-TASK_IDS2=$(fm_backend_cmux_create_task "$LABEL2" /tmp) || fail "second create_task failed"
-read -r WS2 _SF2 <<EOF
-$TASK_IDS2
-EOF
-live=$(fm_backend_cmux_list_live)
-case "$live" in
-  *"$LABEL2"*) : ;;
-  *) fail "list_live did not report the freshly created task workspace by title"$'\n'"--- got ---"$'\n'"$live" ;;
-esac
-pass "real cmux: list_live discovers a live task workspace by fm-<id> title"
 
 cleanup_all
 trap - EXIT

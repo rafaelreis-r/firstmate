@@ -376,7 +376,8 @@ test_terminal_supersession_reaches_cached_drains() {
           _ "$ROOT/bin/fm-classify-lib.sh" "$status" "$expected" "$closing" \
           || fail "$kind whole-file, incremental, and key-history reads disagree with terminal supersession"
       done
-      span=$(bash -c '. "$1"; status_span_first_actionable "$2" 0' _ "$ROOT/bin/fm-classify-lib.sh" "$status")
+      span=$(bash -c '. "$1"; status_span_first_actionable_record "$2" 0' _ "$ROOT/bin/fm-classify-lib.sh" "$status")
+      span=${span#*$'\t'*$'\t'}
       if [ "$kind" = secondmate ]; then
         assert_contains "$span" 'blocked [key=access]: waiting' "secondmate opening must remain actionable"
       else

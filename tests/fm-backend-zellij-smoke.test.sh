@@ -187,19 +187,5 @@ LIVE_AFTER_KILL=$(fm_backend_zellij_cli "$SESSION" action list-panes --json 2>/d
 fm_backend_zellij_kill "$TARGET" || fail "kill on an already-dead target must stay best-effort (never fail)"
 pass "real zellij: kill removes the pane+tab and is idempotent/best-effort"
 
-# --- list_live (name-based recovery discovery) --------------------------------
-
-LABEL2="fm-smoke2"
-TASK_IDS2=$(fm_backend_zellij_create_task "$SESSION" "$LABEL2" /tmp) || fail "second create_task failed"
-read -r _TAB_ID2 PANE_ID2 <<EOF
-$TASK_IDS2
-EOF
-live=$(fm_backend_zellij_list_live "$SESSION")
-assert_contains_local() { case "$1" in *"$2"*) : ;; *) fail "$3"$'\n'"--- got ---"$'\n'"$1" ;; esac; }
-assert_contains_local "$live" "$LABEL2" "list_live did not report the freshly created task tab by name"
-pass "real zellij: list_live discovers a live task tab by fm-<id> name"
-
-fm_backend_zellij_kill "$SESSION:$PANE_ID2"
-
 cleanup_all
 trap - EXIT

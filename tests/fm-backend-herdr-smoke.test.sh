@@ -220,21 +220,6 @@ if [ -z "$SM_TAB_ID" ] || [ -z "$SM_PANE_ID" ]; then
 fi
 pass "real herdr: a task spawned into the secondmate-shaped home lands as a tab inside the secondmate's OWN workspace"
 
-# list_live for each home must never see the OTHER home's task.
-PRIMARY_LIVE=$(fm_backend_herdr_list_live "$SESSION")
-case "$PRIMARY_LIVE" in
-  *"$SM_TASK_LABEL"*) fail "the primary home's list_live must not see a secondmate-shaped home's task"$'\n'"$PRIMARY_LIVE" ;;
-esac
-SM_LIVE=$(FM_HOME="$SM_HOME" fm_backend_herdr_list_live "$SESSION")
-case "$SM_LIVE" in
-  *"$SM_TASK_LABEL"*) : ;;
-  *) fail "the secondmate-shaped home's list_live did not see its own task"$'\n'"$SM_LIVE" ;;
-esac
-case "$SM_LIVE" in
-  *"$LABEL"*) fail "the secondmate-shaped home's list_live must not see the primary's task ($LABEL)"$'\n'"$SM_LIVE" ;;
-esac
-pass "real herdr: list_live stays scoped to each home's own workspace - neither home sees the other's tasks"
-
 # --- restart stability in the MULTI-workspace shape --------------------------
 # P2 (herdr-verification-p2.md "ID stability") verified this for a single
 # workspace only. Both this suite's workspaces (and their tabs/panes) must
@@ -338,30 +323,16 @@ fi
 fm_backend_herdr_kill "$TARGET" || fail "kill on an already-dead target must stay best-effort (never fail)"
 pass "real herdr: kill removes the pane and is idempotent/best-effort"
 
-# --- list_live (label-based recovery discovery) ------------------------------
-
 # Real firstmate spawns always re-run container_ensure immediately before
 # create_task (bin/fm-spawn.sh), never reusing a container reference from an
-# earlier spawn. This test must do the same: the kill above closed the only
-# remaining tab in $CONTAINER's workspace, and closing a workspace's last tab
-# deletes the workspace itself (verified real-herdr behavior), so the stale
-# $CONTAINER from container_ensure at test start no longer names a live
-# workspace.
-CONTAINER_RAW=$(fm_backend_herdr_container_ensure /tmp) || fail "container_ensure for the second task failed"
-CONTAINER=${CONTAINER_RAW%%$'\t'*}
+# earlier spawn. The kill above closed the only remaining tab in $CONTAINER's
+# workspace, and closing a workspace's last tab deletes the workspace itself
+# (verified real-herdr behavior), so the next container_ensure must create a
+# fresh one.
+CONTAINER_RAW=$(fm_backend_herdr_container_ensure /tmp) || fail "container_ensure after the last tab closed failed"
 SEEDED_TAB_ID=${CONTAINER_RAW#*$'\t'}
 [ -n "$SEEDED_TAB_ID" ] || fail "the workspace was deleted when its last tab was killed, so this container_ensure must CREATE a fresh one and report its seeded default tab id"
-LABEL2="fm-smoke2"
-TASK_IDS2=$(fm_backend_herdr_create_task "$CONTAINER" "$LABEL2" /tmp "$SEEDED_TAB_ID") || fail "second create_task failed"
-read -r _TAB_ID2 PANE_ID2 <<EOF
-$TASK_IDS2
-EOF
-live=$(fm_backend_herdr_list_live "$SESSION")
-assert_contains_local() { case "$1" in *"$2"*) : ;; *) fail "$3"$'\n'"--- got ---"$'\n'"$1" ;; esac; }
-assert_contains_local "$live" "$LABEL2" "list_live did not report the freshly created task tab by label"
-pass "real herdr: list_live discovers a live task tab by fm-<id> label"
-
-fm_backend_herdr_kill "$SESSION:$PANE_ID2"
+pass "real herdr: container_ensure recreates the home workspace after its last tab closed"
 
 cleanup_all
 trap - EXIT

@@ -621,37 +621,6 @@ fm_backend_zellij_kill() {  # <target> [tab_id] [expected_label]
   fi
 }
 
-# fm_backend_zellij_list_live: recovery/orphan discovery. Lists every tab in
-# <session> whose title carries THIS firstmate home's own tag
-# (fm-<hometag>-, fm_backend_zellij_home_label) - never any other home's
-# tagged tabs, and never a bare untagged "fm-<id>" tab either (this sweep
-# deliberately does NOT attempt the legacy-bare-title fallback
-# fm_backend_zellij_tab_matches_label uses for a single already-known tab:
-# telling apart "our own pre-migration tab" from "another home's same-shaped
-# bare title" in a bulk, no-numeric-id-in-hand sweep is not something this
-# adapter can do safely - see docs/zellij-backend.md "Home-scoped tab
-# titles"). A pre-migration task is still reachable through its recorded
-# window= meta, which target_ready/kill DO accept via that bare-title
-# fallback. One "<session>:<pane_id>\t<plain fm-<id> label>" line per live,
-# in-home task tab (the home tag is stripped back off before printing, so
-# callers see the same plain label they always have). Read-only: a session
-# that does not exist yet simply lists nothing.
-fm_backend_zellij_list_live() {  # <session>
-  local session=$1 home prefix tabs tab_id name pane_id plain
-  fm_backend_zellij_session_exists "$session" || return 0
-  home=$(fm_backend_zellij_home_label)
-  prefix="fm-$home-"
-  tabs=$(fm_backend_zellij_cli "$session" action list-tabs --json 2>/dev/null) || return 0
-  while IFS=$'\t' read -r tab_id name; do
-    [ -n "$tab_id" ] || continue
-    plain=${name#"$prefix"}
-    [ -n "$plain" ] || continue
-    pane_id=$(fm_backend_zellij_pane_for_tab "$session" "$tab_id") || continue
-    [ -n "$pane_id" ] || continue
-    printf '%s:%s\tfm-%s\n' "$session" "$pane_id" "$plain"
-  done < <(printf '%s' "$tabs" | jq -r --arg prefix "$prefix" '.[]? | select(.name | startswith($prefix)) | "\(.tab_id)\t\(.name)"' 2>/dev/null)
-}
-
 # fm_backend_zellij_resolve_bare_selector: the live-tab-listing fallback for
 # an ad hoc selector with no meta (mirrors tmux's list-windows grep and
 # herdr's equivalent). Searches every active zellij session for a tab

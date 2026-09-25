@@ -14,28 +14,28 @@ test_status_span_actionable_classifier() {
   local dir state offset
   dir=$(make_case classify-signal); state="$dir/state"
   printf 'working: step 1\nworking: step 2\n' > "$state/a.status"
-  status_span_has_actionable "$state/a.status" 0 && fail "benign working: span classified actionable"
+  status_span_first_actionable_record "$state/a.status" 0 >/dev/null && fail "benign working: span classified actionable"
   printf 'working: x\nneeds-decision: pick A or B\n' > "$state/b.status"
-  status_span_has_actionable "$state/b.status" 0 || fail "captain-relevant span classified benign"
+  status_span_first_actionable_record "$state/b.status" 0 >/dev/null || fail "captain-relevant span classified benign"
   # A failure and a merge result are captain-relevant and must always wake.
   printf 'failed: build broke on main\n' > "$state/d.status"
-  status_span_has_actionable "$state/d.status" 0 || fail "a failed: line was not actionable"
+  status_span_first_actionable_record "$state/d.status" 0 >/dev/null || fail "a failed: line was not actionable"
   printf 'merged\n' > "$state/e.status"
-  status_span_has_actionable "$state/e.status" 0 || fail "a legacy merged line was not actionable"
+  status_span_first_actionable_record "$state/e.status" 0 >/dev/null || fail "a legacy merged line was not actionable"
   # An offset past the whole log has nothing left to classify: an event already
   # classified must not re-fire on the next append.
   offset=$(size_of "$state/b.status")
-  status_span_has_actionable "$state/b.status" "$offset" \
+  status_span_first_actionable_record "$state/b.status" "$offset" >/dev/null \
     && fail "an already-classified needs-decision re-fired from its own end offset"
   printf 'working: tidying up\n' >> "$state/b.status"
-  status_span_has_actionable "$state/b.status" "$offset" \
+  status_span_first_actionable_record "$state/b.status" "$offset" >/dev/null \
     && fail "a routine append after a classified decision was classified actionable"
   # An unusable offset (absent, malformed, or past a truncated log) reads the
   # whole file rather than losing the events it cannot account for.
-  status_span_has_actionable "$state/b.status" "" || fail "an empty offset did not read the whole log"
-  status_span_has_actionable "$state/b.status" "not-a-number" || fail "a malformed offset did not read the whole log"
-  status_span_has_actionable "$state/b.status" 99999 || fail "an offset past the log did not read the whole log"
-  pass "status_span_has_actionable: benign absorbed, captain events surfaced, classified events not re-fired"
+  status_span_first_actionable_record "$state/b.status" "" >/dev/null || fail "an empty offset did not read the whole log"
+  status_span_first_actionable_record "$state/b.status" "not-a-number" >/dev/null || fail "a malformed offset did not read the whole log"
+  status_span_first_actionable_record "$state/b.status" 99999 >/dev/null || fail "an offset past the log did not read the whole log"
+  pass "status_span_first_actionable_record: benign absorbed, captain events surfaced, classified events not re-fired"
 }
 
 # The reported bug, at the classifier: an actionable event followed by a ROUTINE
@@ -46,24 +46,26 @@ test_status_span_survives_a_later_routine_append() {
   dir=$(make_case classify-masked); state="$dir/state"
   printf 'working: setup\nneeds-decision: pick A or B\nworking: still tidying the branch\n' \
     > "$state/mask.status"
-  status_span_has_actionable "$state/mask.status" 0 \
+  status_span_first_actionable_record "$state/mask.status" 0 >/dev/null \
     || fail "a needs-decision hidden behind a later working: line was classified routine"
-  event=$(status_span_first_actionable "$state/mask.status" 0)
+  event=$(status_span_first_actionable_record "$state/mask.status" 0)
+  event=${event#*$'\t'*$'\t'}
   [ "$event" = "needs-decision: pick A or B" ] \
     || fail "the span reported '$event' instead of the decision it found"
   # The captain-reported shape: a finished release/install reported as done and
   # then followed by routine cleanup chatter must still reach the captain.
   printf 'working: publishing\ndone: release 1.4.0 published and installed\nworking: cleaning the build dir\nnote: cache pruned\n' \
     > "$state/release.status"
-  status_span_has_actionable "$state/release.status" 0 \
+  status_span_first_actionable_record "$state/release.status" 0 >/dev/null \
     || fail "a done: completion hidden behind later routine appends was classified routine"
-  event=$(status_span_first_actionable "$state/release.status" 0)
+  event=$(status_span_first_actionable_record "$state/release.status" 0)
+  event=${event#*$'\t'*$'\t'}
   [ "$event" = "done: release 1.4.0 published and installed" ] \
     || fail "the span reported '$event' instead of the completion it found"
   # A blocker is the away-mode shape of the same masking.
   printf 'blocked: cannot reach the release host\npaused: waiting for release access\n' \
     > "$state/blocked.status"
-  status_span_has_actionable "$state/blocked.status" 0 \
+  status_span_first_actionable_record "$state/blocked.status" 0 >/dev/null \
     || fail "a blocked: event hidden behind a current wait was classified routine"
   pass "an actionable event is not hidden by later routine appends, and is named as itself"
 }
@@ -74,31 +76,34 @@ test_status_span_respects_decision_closure() {
   local dir state event open
   dir=$(make_case classify-closure); state="$dir/state"
   printf 'needs-decision [key=api]: pick A or B\nresolved [key=api]: took A\n' > "$state/closed.status"
-  status_span_has_actionable "$state/closed.status" 0 \
+  status_span_first_actionable_record "$state/closed.status" 0 >/dev/null \
     && fail "a decision the same span already closed was still classified actionable"
   # Reopening the SAME key after a close must survive: the close belongs to the
   # earlier opening, not to the one that came after it.
   printf 'needs-decision [key=api]: pick A or B\nresolved [key=api]: took A\nneeds-decision: [key=api] pick A or B\n' \
     > "$state/reopened.status"
-  event=$(status_span_first_actionable "$state/reopened.status" 0) \
+  event=$(status_span_first_actionable_record "$state/reopened.status" 0) \
     || fail "a decision reopened under a key that was closed earlier was classified routine"
+  event=${event#*$'\t'*$'\t'}
   [ "$event" = "needs-decision: [key=api] pick A or B" ] \
     || fail "the reopened key surfaced its closed opening instead of the live reopening: $event"
   # A terminal event is never retired by a later closure line.
   printf 'failed: build broke on main\nresolved [key=api]: unrelated\n' > "$state/term.status"
-  status_span_has_actionable "$state/term.status" 0 \
+  status_span_first_actionable_record "$state/term.status" 0 >/dev/null \
     || fail "a failed: event was retired by an unrelated closure"
   # A live decision must survive a NEWER closure that belongs to another key.
   printf 'needs-decision [key=api]: pick A or B\nneeds-decision [key=db]: pick a store\nresolved [key=db]: took sqlite\n' \
     > "$state/two.status"
-  event=$(status_span_first_actionable "$state/two.status" 0) \
+  event=$(status_span_first_actionable_record "$state/two.status" 0) \
     || fail "a still-open decision was retired by a newer closure under another key"
+  event=${event#*$'\t'*$'\t'}
   [ "$event" = "needs-decision [key=api]: pick A or B" ] \
     || fail "the span reported '$event' instead of the decision still open"
   printf 'needs-decision [key=pending-reply-x]: unrelated request\nworking: awaiting reconciliation\n' \
     > "$state/rejected-reserved.status"
-  event=$(status_span_first_actionable "$state/rejected-reserved.status" 0) \
+  event=$(status_span_first_actionable_record "$state/rejected-reserved.status" 0) \
     || fail "a rejected reserved-key request was silently dropped"
+  event=${event#*$'\t'*$'\t'}
   [ "$event" = "reconciliation-required: needs-decision [key=pending-reply-x]: unrelated request" ] \
     || fail "a rejected reserved-key request was not labeled for reconciliation: $event"
   open=$(status_open_decisions "$state/rejected-reserved.status")
@@ -117,7 +122,7 @@ test_malformed_seen_signature_reads_the_whole_log() {
     "$ROOT/bin/fm-wake-lib.sh" "$state" "$f")
   [ "$offset" = 0 ] \
     || fail "a digits-only malformed seen signature was accepted as an offset"
-  status_span_has_actionable "$f" "$offset" \
+  status_span_first_actionable_record "$f" "$offset" >/dev/null \
     || fail "a malformed seen signature skipped the actionable start of the log"
   pass "a malformed seen signature causes the whole status log to be classified"
 }

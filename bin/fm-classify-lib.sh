@@ -125,8 +125,8 @@ fm_utc_iso_to_epoch() {  # <timestamp>
 # status decision opened by needs-decision or blocked. See status_open_decisions
 # below for the status-fold contract. The transfer verb is written only after
 # fm-captain-hold.sh has verified the corresponding captain-held backlog item.
-FM_CLASSIFY_RESOLVE_VERB_DEFAULT='resolved'
-FM_CLASSIFY_CAPTAIN_HELD_VERB_DEFAULT='captain-held'
+FM_CLASSIFY_RESOLVE_VERB='resolved'
+FM_CLASSIFY_CAPTAIN_HELD_VERB='captain-held'
 
 # How many trailing lines the latest-event read parses before it widens to the
 # whole file. A status record and its continuation prose sit within a few lines
@@ -168,8 +168,8 @@ _fm_status_event_scan() {
     case "$verb" in
       working|needs-decision|blocked|done|failed|note|\
       "${FM_CLASSIFY_PAUSED_VERB:-$FM_CLASSIFY_PAUSED_VERB_DEFAULT}"|\
-      "${FM_CLASSIFY_RESOLVE_VERB:-$FM_CLASSIFY_RESOLVE_VERB_DEFAULT}"|\
-      "${FM_CLASSIFY_CAPTAIN_HELD_VERB:-$FM_CLASSIFY_CAPTAIN_HELD_VERB_DEFAULT}") prev=$last; last=$line ;;
+      "$FM_CLASSIFY_RESOLVE_VERB"|\
+      "$FM_CLASSIFY_CAPTAIN_HELD_VERB") prev=$last; last=$line ;;
       *) _fm_classify_matches "$line" "$legacy_re" && { prev=$last; last=$line; } ;;
     esac
   done
@@ -243,7 +243,7 @@ status_is_captain_held() {  # <status-line>
   local line=$1 verb
   [ -n "$line" ] || return 1
   verb=$(status_line_verb "$line")
-  [ "$verb" = "${FM_CLASSIFY_CAPTAIN_HELD_VERB:-$FM_CLASSIFY_CAPTAIN_HELD_VERB_DEFAULT}" ]
+  [ "$verb" = "$FM_CLASSIFY_CAPTAIN_HELD_VERB" ]
 }
 
 # 0 if a status line declares either an external-wait pause or a verified
@@ -496,12 +496,12 @@ EOF
 # consumer-side rule on purpose - it protects local and remote writers
 # identically, and it can never fail a whole delta or wedge a stream the way a
 # writer-side rejection would.
-FM_CLASSIFY_RESERVED_KEY_PREFIXES_DEFAULT='pending-reply-'
+FM_CLASSIFY_RESERVED_KEY_PREFIXES='pending-reply-'
 
 # 0 when <key> is not reserved, or is reserved and <note> speaks its vocabulary.
 _fm_decision_key_transition_allowed() {  # <key> <note>
   local key=$1 note=$2 prefix
-  for prefix in ${FM_CLASSIFY_RESERVED_KEY_PREFIXES:-$FM_CLASSIFY_RESERVED_KEY_PREFIXES_DEFAULT}; do
+  for prefix in $FM_CLASSIFY_RESERVED_KEY_PREFIXES; do
     case "$key" in
       "$prefix"*)
         case "$note" in
@@ -577,22 +577,19 @@ _fm_decision_fold_line() {  # <open-set> <status-line> <resolve-verb> <held-verb
 # TAB-separated "<key>\t<verb>\t<summary>" line per still-open decision, in
 # most-recently-opened-last order; prints nothing when none are open. Reads the
 # status file, plus its sibling `.meta` for the task kind the terminal rule needs
-# when the caller passes no <kind>; no globals beyond the optional
-# FM_CLASSIFY_RESOLVE_VERB override. This is the durable open-set the fleet
-# snapshot and any point-in-time consumer must use instead of trusting the last
-# status line.
-# The scan_open_decisions wrapper below enumerates a whole directory rather than
-# a single caller-chosen path, so a status file that is itself a symlink (e.g.
-# escaping the state directory) is rejected outright with a plain [ -L ] check
-# before any read - a cheap builtin, unlike fm_wake_latest_event's O_NOFOLLOW
-# subprocess read, which exists for that function's much narrower payload-driven
-# path resolution rather than this directory-local glob.
+# when the caller passes no <kind>; no other globals. This is the durable
+# open-set the fleet snapshot and any point-in-time consumer must use instead of
+# trusting the last status line.
+# The fleet-wide scans below enumerate a whole directory rather than a single
+# caller-chosen path, so a status file that is itself a symlink (e.g. escaping
+# the state directory) is rejected outright with a plain [ -L ] check before any
+# read.
 status_open_decisions() {  # <status-file> [<kind>]
   local f=$1 kind=${2:-} line resolve held open='' verb
   [ -f "$f" ] && [ -r "$f" ] && [ ! -L "$f" ] || return 0
   kind=$(_fm_status_kind "$f" "$kind")
-  resolve=${FM_CLASSIFY_RESOLVE_VERB:-$FM_CLASSIFY_RESOLVE_VERB_DEFAULT}
-  held=${FM_CLASSIFY_CAPTAIN_HELD_VERB:-$FM_CLASSIFY_CAPTAIN_HELD_VERB_DEFAULT}
+  resolve=$FM_CLASSIFY_RESOLVE_VERB
+  held=$FM_CLASSIFY_CAPTAIN_HELD_VERB
   while IFS= read -r line || [ -n "$line" ]; do
     status_line_verb "$line" verb
     case "$verb" in
@@ -672,8 +669,8 @@ status_key_closing_verb() {  # <status-file> <key>
   [ -f "$f" ] && [ -r "$f" ] && [ ! -L "$f" ] || return 0
   [ -n "$want" ] || return 0
   kind=$(_fm_status_kind "$f")
-  resolve=${FM_CLASSIFY_RESOLVE_VERB:-$FM_CLASSIFY_RESOLVE_VERB_DEFAULT}
-  held=${FM_CLASSIFY_CAPTAIN_HELD_VERB:-$FM_CLASSIFY_CAPTAIN_HELD_VERB_DEFAULT}
+  resolve=$FM_CLASSIFY_RESOLVE_VERB
+  held=$FM_CLASSIFY_CAPTAIN_HELD_VERB
   candidates=$(grep -E \
     "^[[:space:]]*(needs-decision|blocked|done|failed|$resolve|$held)[[:space:]:[]" \
     "$f") || [ "$?" -eq 1 ] || candidates=$(cat "$f")
@@ -705,30 +702,6 @@ EOF
     return 0
   fi
   printf '%s' "$verb"
-}
-
-# Fleet-wide wrapper around status_open_decisions: scans every task's status
-# log under <state> and prefixes each still-open decision with its owning task
-# id, so a per-wake or per-session surface can print the consolidated open set
-# without re-walking the fold itself. A thin directory scan only - the fold
-# above remains the ONE place the open/resolved semantics are decided. Prints
-# one "<task>\t<key>\t<verb>\t<note>" line per open decision, in glob (task id)
-# order; prints nothing when none are open.
-scan_open_decisions() {  # <state>
-  local state=$1 f task open line
-  for f in "$state"/*.status; do
-    [ -e "$f" ] || continue
-    task=$(basename "$f"); task="${task%.status}"
-    open=$(status_open_decisions "$f") || continue
-    [ -n "$open" ] || continue
-    while IFS= read -r line; do
-      [ -n "$line" ] || continue
-      printf '%s\t%s\n' "$task" "$line"
-    done <<EOF
-$open
-EOF
-  done
-  return 0
 }
 
 # --- incremental (cursor-backed) open-decisions fold ------------------------
@@ -976,8 +949,8 @@ status_open_decisions_incremental() {  # <status-file> [<captured-end-offset>]
     # than re-reading the whole file, without relying on timing or source text.
     [ -n "${FM_OPEN_DECISIONS_READ_PROBE:-}" ] \
       && printf '%s\t%s\n' "$f" "$chunk_size" >> "$FM_OPEN_DECISIONS_READ_PROBE"
-    resolve=${FM_CLASSIFY_RESOLVE_VERB:-$FM_CLASSIFY_RESOLVE_VERB_DEFAULT}
-    held=${FM_CLASSIFY_CAPTAIN_HELD_VERB:-$FM_CLASSIFY_CAPTAIN_HELD_VERB_DEFAULT}
+    resolve=$FM_CLASSIFY_RESOLVE_VERB
+    held=$FM_CLASSIFY_CAPTAIN_HELD_VERB
     while IFS= read -r line || [ -n "$line" ]; do
       open=$(_fm_decision_fold_line "$open" "$line" "$resolve" "$held" "$kind")
     done < "$chunk_file"
@@ -998,11 +971,11 @@ status_open_decisions_incremental() {  # <status-file> [<captured-end-offset>]
   printf '%s' "$open"
 }
 
-# Incremental sibling of scan_open_decisions: same fleet-wide directory walk and
-# output shape ("<task>\t<key>\t<verb>\t<note>" per open decision), but folds
-# each task's status log through status_open_decisions_incremental instead of
-# the whole-file status_open_decisions, so a fleet-wide per-drain scan stays
-# bounded by new appends rather than total lifetime log size across every task.
+# Fleet-wide open-decision scan: one "<task>\t<key>\t<verb>\t<note>" line per
+# open decision, in glob (task id) order. It folds each task's status log
+# through status_open_decisions_incremental rather than the whole-file
+# status_open_decisions, so a per-drain scan stays bounded by new appends
+# rather than total lifetime log size across every task.
 scan_open_decisions_incremental() {  # <state>
   local state=$1 f task open line
   for f in "$state"/*.status; do
@@ -1606,15 +1579,15 @@ status_line_is_unread_surface() {  # <status-line>
   [ -n "$line" ] || return 1
   verb=$(status_line_verb "$line")
   [ "$verb" = note ] && return 0
-  resolve=${FM_CLASSIFY_RESOLVE_VERB:-$FM_CLASSIFY_RESOLVE_VERB_DEFAULT}
-  held=${FM_CLASSIFY_CAPTAIN_HELD_VERB:-$FM_CLASSIFY_CAPTAIN_HELD_VERB_DEFAULT}
+  resolve=$FM_CLASSIFY_RESOLVE_VERB
+  held=$FM_CLASSIFY_CAPTAIN_HELD_VERB
   case "$verb" in
     "$resolve"|"$held") ;;
     *) return 1 ;;
   esac
   key=$(_fm_decision_key "$line") || return 1
   note=$(status_line_note "$line")
-  for prefix in ${FM_CLASSIFY_RESERVED_KEY_PREFIXES:-$FM_CLASSIFY_RESERVED_KEY_PREFIXES_DEFAULT}; do
+  for prefix in $FM_CLASSIFY_RESERVED_KEY_PREFIXES; do
     case "$key" in
       "$prefix"*)
         _fm_decision_key_transition_allowed "$key" "$note"
@@ -1628,7 +1601,7 @@ status_line_is_unread_surface() {  # <status-line>
 # Fleet-wide unread informational lines: one "<task>\t<status-line>" row per
 # still-unread `note:` or pending-reply resolution, in glob (task id) order.
 # Prints nothing when none are unread. Directory scan rejects status symlinks
-# the same way scan_open_decisions does.
+# the same way status_open_decisions does.
 scan_unread_surface_lines() {  # <state>
   local state=$1 f task lines line
   for f in "$state"/*.status; do
@@ -1677,8 +1650,8 @@ EOF
 # phase outrank a structured home snapshot or fm-crew-state result.
 _fm_status_open_activities_stream() {
   local line verb key note resolve held open='' pause
-  resolve=${FM_CLASSIFY_RESOLVE_VERB:-$FM_CLASSIFY_RESOLVE_VERB_DEFAULT}
-  held=${FM_CLASSIFY_CAPTAIN_HELD_VERB:-$FM_CLASSIFY_CAPTAIN_HELD_VERB_DEFAULT}
+  resolve=$FM_CLASSIFY_RESOLVE_VERB
+  held=$FM_CLASSIFY_CAPTAIN_HELD_VERB
   pause=${FM_CLASSIFY_PAUSED_VERB:-$FM_CLASSIFY_PAUSED_VERB_DEFAULT}
   while IFS= read -r line || [ -n "$line" ]; do
     # Blank-line guard; see _fm_decision_fold_line for why this is a glob.
@@ -1770,8 +1743,8 @@ _fm_status_open_decision_origins() {  # <status-file> [<kind>]
   local f=$1 line open='' after key verb note number=0 origins=''
   local resolve held kind
   kind=$(_fm_status_kind "$f" "${2:-}")
-  resolve=${FM_CLASSIFY_RESOLVE_VERB:-$FM_CLASSIFY_RESOLVE_VERB_DEFAULT}
-  held=${FM_CLASSIFY_CAPTAIN_HELD_VERB:-$FM_CLASSIFY_CAPTAIN_HELD_VERB_DEFAULT}
+  resolve=$FM_CLASSIFY_RESOLVE_VERB
+  held=$FM_CLASSIFY_CAPTAIN_HELD_VERB
   while IFS= read -r line || [ -n "$line" ]; do
     number=$((number + 1))
     after=$(_fm_decision_fold_line "$open" "$line" "$resolve" "$held" "$kind")
@@ -1901,21 +1874,6 @@ EOF
     printf '%s' "$result"
   fi
   return "$rc"
-}
-
-status_span_first_actionable() {  # <status-file> <start-offset>
-  local record rc rest
-  record=$(status_span_first_actionable_record "$1" "${2:-0}")
-  rc=$?
-  if [ "$rc" -eq 0 ]; then
-    rest=${record#*$'\t'}
-    printf '%s' "${rest#*$'\t'}"
-  fi
-  return "$rc"
-}
-
-status_span_has_actionable() {  # <status-file> <start-offset>
-  status_span_first_actionable_record "$1" "${2:-0}" > /dev/null
 }
 
 # Classify WHY an idle/stale crew MIGHT be safely absorbed instead of surfaced,

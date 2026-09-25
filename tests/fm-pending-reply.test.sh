@@ -85,6 +85,12 @@ SH
   printf '%s\n' "$fb"
 }
 
+# Complete the active turn through its real writer: a busy observation, then an
+# idle one, exactly as the tick records a delivered turn finishing.
+observe_turn_completed() {  # <state> <corr>
+  fm_pending_reply_observe_busy "$1" "$2" busy && fm_pending_reply_observe_busy "$1" "$2" idle
+}
+
 setup_parent() {  # <name> -> home
   local home="$TMP_ROOT/$1-$RANDOM"
   mkdir -p "$home/state"
@@ -213,7 +219,7 @@ test_recovery_attempt_is_never_reinjected() {
   export FM_PENDING_REPLY_SEND_HOOK=recovery_fail_hook
   corr=$(fm_pending_reply_create "$home" "$state" hibit "at most once")
   fm_pending_reply_mark_delivered "$state" "$corr"
-  fm_pending_reply_mark_turn_completed "$state" "$corr" request
+  observe_turn_completed "$state" "$corr"
   if fm_pending_reply_send_recovery "$state" "$corr"; then
     fail "failed recovery transport should report failure"
   fi
@@ -232,7 +238,7 @@ test_recovery_attempt_is_never_reinjected() {
     || fail "failed recovery escalation should name delivery failure"
   live_corr=$(fm_pending_reply_create "$home" "$state" hibit "live recovery")
   fm_pending_reply_mark_delivered "$state" "$live_corr"
-  fm_pending_reply_mark_turn_completed "$state" "$live_corr" request
+  observe_turn_completed "$state" "$live_corr"
   live_rec=$(fm_pending_reply_path "$state" "$live_corr")
   live_pid=${BASHPID:-$$}
   live_identity=$(fm_pending_reply_pid_identity "$live_pid") \
@@ -247,7 +253,7 @@ test_recovery_attempt_is_never_reinjected() {
     || fail "live recovery must remain in progress without elapsed-time inference"
   corr=$(fm_pending_reply_create "$home" "$state" hibit "crashed recovery")
   fm_pending_reply_mark_delivered "$state" "$corr"
-  fm_pending_reply_mark_turn_completed "$state" "$corr" request
+  observe_turn_completed "$state" "$corr"
   rec=$(fm_pending_reply_path "$state" "$corr")
   fm_pending_reply_set "$rec" recovery_attempted_epoch 2500 || fail "attempt precommit failed"
   fm_pending_reply_set "$rec" phase recovery_sending || fail "sending phase precommit failed"
@@ -281,7 +287,7 @@ test_recovery_reply_resolves_original() {
 
   corr=$(fm_pending_reply_create "$home" "$state" "hibit" "phase 7 status")
   fm_pending_reply_mark_delivered "$state" "$corr"
-  fm_pending_reply_mark_turn_completed "$state" "$corr" request
+  observe_turn_completed "$state" "$corr"
   fm_pending_reply_send_recovery "$state" "$corr" || fail "recovery send failed"
   printf 'done [corr=%s]: phase 7 is Done (reposted)\n' "$corr" > "$state/hibit.status"
   fm_pending_reply_try_resolve "$state" "$corr" || fail "recovery reply should resolve original"
@@ -306,10 +312,10 @@ test_second_missed_turn_escalates_once_and_stays_durable() {
 
   corr=$(fm_pending_reply_create "$home" "$state" "hibit" "why is phase 7 stuck")
   fm_pending_reply_mark_delivered "$state" "$corr"
-  fm_pending_reply_mark_turn_completed "$state" "$corr" request
+  observe_turn_completed "$state" "$corr"
   fm_pending_reply_send_recovery "$state" "$corr" || fail "recovery send failed"
   # Recovery turn also completes with no correlated report.
-  fm_pending_reply_mark_turn_completed "$state" "$corr" recovery
+  observe_turn_completed "$state" "$corr"
   fm_pending_reply_maybe_escalate "$state" "$corr" || fail "escalation should fire"
   [ "$(phase_of "$state" "$corr")" = escalated ] || fail "phase should be escalated"
   status_line=$(tail -1 "$state/hibit.status")
@@ -346,11 +352,6 @@ seen_gate() {  # <state> <file>: 0 when every byte is already announced
   FM_STATE_OVERRIDE="$1" bash -c '. "$1"; fm_wake_signal_seen_current "$2" "$3"' \
     _ "$ROOT/bin/fm-wake-lib.sh" "$1" "$2"
 }
-prime_seen() {  # <state> <file>
-  FM_STATE_OVERRIDE="$1" bash -c '
-    . "$1"; fm_wake_status_mark_current "$2" "$3"
-  ' _ "$ROOT/bin/fm-wake-lib.sh" "$1" "$2"
-}
 
 test_escalation_wakes_and_its_close_stays_quiet() {
   local home state corr
@@ -360,23 +361,23 @@ test_escalation_wakes_and_its_close_stays_quiet() {
   export FM_PENDING_REPLY_NOW=4200
   corr=$(fm_pending_reply_create "$home" "$state" "hibit" "confirm the notarization")
   fm_pending_reply_mark_delivered "$state" "$corr"
-  fm_pending_reply_mark_turn_completed "$state" "$corr" request
+  observe_turn_completed "$state" "$corr"
   fm_pending_reply_send_recovery "$state" "$corr" || fail "recovery send failed"
-  fm_pending_reply_mark_turn_completed "$state" "$corr" recovery
+  observe_turn_completed "$state" "$corr"
   : > "$state/hibit.status"
-  prime_seen "$state" "$state/hibit.status" || fail "could not prime the announced baseline"
+  prime_status_seen "$state" "$state/hibit.status" || fail "could not prime the announced baseline"
   # A NEW blocker must wake: the escalation append leaves unannounced bytes.
   fm_pending_reply_maybe_escalate "$state" "$corr" || fail "escalation should fire"
   if seen_gate "$state" "$state/hibit.status"; then
     fail "a new pending-reply escalation was hidden from the watcher's signal gate"
   fi
-  prime_seen "$state" "$state/hibit.status" || fail "could not mark the escalation announced"
+  prime_status_seen "$state" "$state/hibit.status" || fail "could not mark the escalation announced"
   # A genuinely new correlated reply must wake too.
   printf 'done [corr=%s]: notarization confirmed\n' "$corr" >> "$state/hibit.status"
   if seen_gate "$state" "$state/hibit.status"; then
     fail "a new correlated reply was hidden from the watcher's signal gate"
   fi
-  prime_seen "$state" "$state/hibit.status" || fail "could not mark the reply announced"
+  prime_status_seen "$state" "$state/hibit.status" || fail "could not mark the reply announced"
   # The home's own escalation CLOSE is bookkeeping and stays quiet.
   fm_pending_reply_try_resolve "$state" "$corr" || fail "correlated reply should resolve"
   grep -Fq "resolved [key=pending-reply-$corr]" "$state/hibit.status" \
@@ -393,10 +394,10 @@ test_escalation_publication_failure_retries() {
   export FM_PENDING_REPLY_NOW=4500
   corr=$(fm_pending_reply_create "$home" "$state" "hibit" "retry escalation")
   fm_pending_reply_mark_delivered "$state" "$corr"
-  fm_pending_reply_mark_turn_completed "$state" "$corr" request
+  observe_turn_completed "$state" "$corr"
   export FM_PENDING_REPLY_SEND_HOOK='true'
   fm_pending_reply_send_recovery "$state" "$corr" || fail "recovery send failed"
-  fm_pending_reply_mark_turn_completed "$state" "$corr" recovery
+  observe_turn_completed "$state" "$corr"
   rec=$(fm_pending_reply_path "$state" "$corr")
   target="$state/escalation-target"
   mkdir -p "$target"
@@ -472,9 +473,9 @@ test_foreign_blocker_is_not_selected_as_escalation() {
   export FM_PENDING_REPLY_SEND_HOOK=true
   corr=$(fm_pending_reply_create "$home" "$state" "hibit" "foreign blocker")
   fm_pending_reply_mark_delivered "$state" "$corr"
-  fm_pending_reply_mark_turn_completed "$state" "$corr" request
+  observe_turn_completed "$state" "$corr"
   fm_pending_reply_send_recovery "$state" "$corr" || fail "recovery send failed"
-  fm_pending_reply_mark_turn_completed "$state" "$corr" recovery
+  observe_turn_completed "$state" "$corr"
   fm_pending_reply_maybe_escalate "$state" "$corr" || fail "genuine escalation failed"
   rec=$(fm_pending_reply_path "$state" "$corr")
   printf 'blocked [key=release]: foreign decision pending-reply-id=%s corr=%s\n' \
@@ -1174,7 +1175,7 @@ test_mirrored_remote_reply_never_triggers_a_repost() {
     "remote_host=remote-mac" "remote_root=/remote/root" "remote_backend=herdr"
   corr=$(fm_pending_reply_create "$home" "$state" "ios" "did the build go green")
   fm_pending_reply_mark_delivered "$state" "$corr"
-  fm_pending_reply_mark_turn_completed "$state" "$corr" request
+  observe_turn_completed "$state" "$corr"
   # The mirror caught up AND carried the mate's correlated answer.
   printf 'done [corr=%s]: build is green\n' "$corr" > "$state/ios.status"
   fm_pending_reply_note_remote_channel_caught_up "$state" ios 6000
@@ -1250,7 +1251,7 @@ test_same_basename_reply_resolves_after_recovery_failure() {
 
   corr=$(fm_pending_reply_create "$home" "$state" mate "status after failed recovery")
   fm_pending_reply_mark_delivered "$state" "$corr"
-  fm_pending_reply_mark_turn_completed "$state" "$corr" request
+  observe_turn_completed "$state" "$corr"
   if fm_pending_reply_send_recovery "$state" "$corr" 2>/dev/null; then
     fail "recovery fixture must fail delivery"
   fi

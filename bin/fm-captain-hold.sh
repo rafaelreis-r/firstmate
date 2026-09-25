@@ -1812,7 +1812,7 @@ command_diverged() {
   command -v tasks-axi >/dev/null 2>&1 || return 0
   ids=$(open_task_ids) || return 0
   [ -n "$ids" ] || return 0
-  resolve=${FM_CLASSIFY_RESOLVE_VERB:-$FM_CLASSIFY_RESOLVE_VERB_DEFAULT}
+  resolve=$FM_CLASSIFY_RESOLVE_VERB
   for f in "$STATE"/*.status; do
     [ -f "$f" ] && [ -r "$f" ] && [ ! -L "$f" ] || continue
     origin=$(basename "$f"); origin=${origin%.status}

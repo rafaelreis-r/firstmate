@@ -1052,29 +1052,6 @@ test_kill_recovers_stale_target_by_label() {
   pass "fm_backend_cmux_kill: recovers stale workspace/surface ids by expected label"
 }
 
-# --- list_live: label-based orphan discovery ---------------------------------
-
-test_list_live_filters_by_title_prefix() {
-  local dir fb out title other_title other_root
-  dir="$TMP_ROOT/list-live"; mkdir -p "$dir/responses"
-  other_root="$dir/other-root"; mkdir -p "$other_root"
-  title=$(cmux_expected_scoped_title fm-task1)
-  other_title=$(cmux_expected_scoped_title fm-task2 "$ROOT" "$other_root")
-  # 1: workspace list --json --id-format uuids -> one in-home task, two unrelated
-  cmux_workspace_list_response "$dir" 1 \
-    "aaaaaaaa-0000-0000-0000-000000000000" "$title" \
-    "dddddddd-8888-8888-8888-888888888888" "$other_title" \
-    "cccccccc-9999-9999-9999-999999999999" "zsh"
-  # 2: list-panes for this home's task1 workspace
-  cmux_panes_response "$dir" 2 "bbbbbbbb-1111-1111-1111-111111111111"
-  fb=$(make_cmux_fakebin "$dir")
-  out=$( PATH="$fb:$PATH" FM_CMUX_LOG="$dir/log" FM_CMUX_RESPONSES="$dir/responses" \
-    bash -c '. "$0/bin/backends/cmux.sh"; fm_backend_cmux_list_live' "$ROOT" )
-  [ "$out" = $'aaaaaaaa-0000-0000-0000-000000000000:bbbbbbbb-1111-1111-1111-111111111111\tfm-task1' ] \
-    || fail "list_live should list only the in-home task workspace with its plain label and surface id, got '$out'"
-  pass "fm_backend_cmux_list_live: lists only this home's scoped task workspaces using plain fm-<id> labels"
-}
-
 # --- fm-spawn.sh: --secondmate refuses backend=cmux --------------------------
 
 test_secondmate_spawn_refuses_cmux_backend() {
@@ -1150,5 +1127,4 @@ test_kill_closes_workspace_directly_when_not_last
 test_kill_adds_sibling_when_last_in_window
 test_kill_is_best_effort_when_close_workspace_fails
 test_kill_recovers_stale_target_by_label
-test_list_live_filters_by_title_prefix
 test_secondmate_spawn_refuses_cmux_backend

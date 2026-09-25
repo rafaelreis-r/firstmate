@@ -233,8 +233,7 @@ LOG_KEEP_LINES_DEFAULT=2000
 
 # --- presence-gating --------------------------------------------------------
 # bin/fm-operational-input.sh owns the U+2063 FIRSTMATE_OP bytes and typed
-# away-supervisor construction. The away-exit predicate intentionally retains
-# its landed leading-U+2063 compatibility behavior.
+# away-supervisor construction.
 AFK_FLAG_NAME=".afk"
 
 # Resolve the effective state dir. FM_STATE_OVERRIDE wins (testing); otherwise
@@ -255,74 +254,10 @@ _file_age() {  # seconds since mtime; very large if missing
   echo $(( $(_now) - m ))
 }
 
-_hash_text() {
-  if command -v md5 >/dev/null 2>&1; then printf '%s' "$1" | md5 -q
-  else printf '%s' "$1" | md5sum | cut -d ' ' -f1; fi
-}
-
 # --- presence-gating helpers (PURE-ish: side-effect-free reads of state) -----
 # afk_active: 0 if the durable away-mode flag exists, 1 otherwise.
 afk_active() {  # <state>
   [ -e "$1/$AFK_FLAG_NAME" ]
-}
-
-# afk_enter / afk_exit: write/clear the away-mode flag. Called by the /afk
-# skill (enter) and by firstmate on user return (exit). Durable: a plain file,
-# so recovery (§5) re-enters afk if it is present after a restart.
-afk_enter() {  # <state>
-  mkdir -p "$1"
-  date '+%s' > "$1/$AFK_FLAG_NAME"
-}
-
-afk_exit() {  # <state>
-  rm -f "$1/$AFK_FLAG_NAME"
-}
-
-# should_exit_afk: encodes firstmate's afk-exit contract as a testable function.
-#   away posture inactive   -> 1 (nothing to exit; the posture is the record
-#                              bin/fm-afk-contract.sh owns, or the legacy flag)
-#   message has marker      -> 1 (internal escalation; stay afk)
-#   message is /afk command -> 1 (re-entering/extending afk; stay afk)
-#   anything else           -> 0 (captain is back; exit afk)
-# Bias toward exit: only the marker and an explicit /afk invocation keep afk
-# alive. A false exit is self-correcting (the captain re-runs /afk).
-should_exit_afk() {  # <state> <message-text>
-  local state=$1 msg=$2
-  afk_active "$state" || fm_afk_contract_present "$state" || return 1
-  message_is_injection "$msg" && return 1
-  case "$msg" in
-    /afk*) return 1 ;;
-  esac
-  return 0
-}
-
-# message_is_injection: 0 if the given message text starts with the sentinel
-# marker (a daemon escalation), 1 otherwise (a real user message). Firstmate's
-# afk-exit contract uses this: marker present -> stay afk; absent -> captain is
-# back. Bias ambiguous cases toward exit (a false exit is self-correcting).
-message_is_injection() {  # <message-text>
-  local msg=$1
-  [ -n "$msg" ] || return 1
-  case "$msg" in
-    "$FM_INJECT_MARK"*) return 0 ;;
-  esac
-  return 1
-}
-
-# strip_injection_marker: remove a current typed away envelope, the landed
-# untyped FIRSTMATE_OP prefix, or the legacy bare sentinel. Current grammar is
-# delegated to its owner rather than reimplemented here.
-strip_injection_marker() {  # <message-text>
-  local msg=$1 body
-  if fm_operational_input_body "$msg" body; then
-    printf '%s' "$body"
-    return
-  fi
-  case "$msg" in
-    "$FM_OPERATIONAL_PREFIX"*) msg=${msg#"$FM_OPERATIONAL_PREFIX"} ;;
-    "$FM_INJECT_MARK"*) msg=${msg#"$FM_INJECT_MARK"} ;;
-  esac
-  printf '%s' "$msg"
 }
 
 # Collapse all newlines to a literal " - " separator so the injected digest is
@@ -611,20 +546,11 @@ mark_escalated_seen() {  # <state> <captured-endpoint-file>
   return "$rc"
 }
 
-# Busy and composer-empty detection form the injection boundary.
-# These thin wrappers keep the daemon's call sites and unit tests stable.
-#
-# pane_input_pending returns 0 unless the composer is positively proven empty.
-# This includes real unsubmitted text, ambiguous structure, unreadable state,
-# blank or otherwise unidentified rows (the strict container-proof rule owned
-# by bin/fm-composer-lib.sh), and future verdicts. The detector drops
-# dim/faint ghost text and strips the harness's composer box borders, so an
-# aligned ghost-only or idle bordered claude composer ("│ > … │") is correctly
-# proven empty while a modal dialog or dead shell never is.
-# pane_is_busy / pane_input_pending: BACKEND-AWARE (dispatch goes through
-# bin/fm-backend.sh's generic per-backend primitives rather than a hand-rolled
-# case statement here). <backend> defaults to tmux when omitted, so every
-# existing caller/test that passes only <target> is unaffected.
+# The busy guard is half of the injection boundary; inject_msg reads the full
+# composer verdict from fm_backend_composer_state for the other half.
+# pane_is_busy is BACKEND-AWARE (dispatch goes through bin/fm-backend.sh's
+# generic per-backend primitives rather than a hand-rolled case statement
+# here). <backend> defaults to tmux when omitted.
 #
 # This rendered reader applies only to the supervisor pane during away-mode
 # injection. It never classifies a recorded worker task. The detected primary
@@ -652,14 +578,6 @@ pane_is_busy() {  # <target> [backend]
   tail40=$(fm_backend_capture "$backend" "$target" 40 2>/dev/null) || return 1
   printf '%s' "$tail40" | grep -v '^[[:space:]]*$' | tail -12 \
     | fm_busy_lines_match "$harness"
-}
-
-# pane_input_pending dispatches through fm_backend_composer_state and treats
-# every verdict except exact empty as unsafe. inject_msg reads the full verdict
-# directly and applies the same positive-proof boundary.
-pane_input_pending() {  # <target> [backend]
-  local target=$1 backend=${2:-tmux}
-  [ "$(fm_backend_composer_state "$backend" "$target" 2>/dev/null)" != empty ]
 }
 
 task_window_backend() {  # <window> <state>
@@ -1581,7 +1499,7 @@ fm_super_main() {
   # (herdr) > tmux fallback. Resolved before the target below, since target
   # discovery composes a herdr "<session>:<pane-id>" string using the same
   # $HERDR_PANE_ID/$HERDR_SESSION markers this checks. Exporting the result
-  # into FM_SUPERVISOR_BACKEND makes inject_msg/pane_is_busy/pane_input_pending
+  # into FM_SUPERVISOR_BACKEND makes inject_msg and pane_is_busy
   # (which read that env var) dispatch through the right backend without an
   # extra global thread-through.
   local discovered_backend backend_source
