@@ -4297,39 +4297,6 @@ if (openDecisionMixed.needsDecisionKeys.join(",") !== "fm-window") {
   throw new Error(`the open-decision stale key was not marked main-owned: ${JSON.stringify(openDecisionMixed)}`);
 }
 
-process.env.FM_CLASSIFY_RESOLVE_VERB = "answered";
-writeFileSync(
-  `${state}/task-a.status`,
-  "needs-decision [key=cleanup]: choose destructive cleanup\nanswered [key=cleanup]: remove generated files\n",
-);
-const customResolved = scopeForUnreadWake(state, false);
-if (!customResolved.eligible || customResolved.eligibleSeqs.slice().sort().join(",") !== "1,2" ||
-  customResolved.needsDecisionKeys.length !== 0) {
-  throw new Error(`a custom resolution verb left the stale decision open: ${JSON.stringify(customResolved)}`);
-}
-
-process.env.FM_CLASSIFY_CAPTAIN_HELD_VERB = "awaiting-captain";
-writeFileSync(`${state}/task-a.status`, "awaiting-captain [key=cleanup]: awaiting the captain\n");
-const customHeld = scopeForUnreadWake(state, false);
-if (!customHeld.eligible || customHeld.eligibleSeqs.join(",") !== "2" ||
-  customHeld.needsDecisionKeys.join(",") !== "fm-window") {
-  throw new Error(`a custom captain-held verb was offered to the branch: ${JSON.stringify(customHeld)}`);
-}
-delete process.env.FM_CLASSIFY_RESOLVE_VERB;
-delete process.env.FM_CLASSIFY_CAPTAIN_HELD_VERB;
-
-process.env.FM_CLASSIFY_RESERVED_KEY_PREFIXES = "secret-";
-writeFileSync(
-  `${state}/task-a.status`,
-  "needs-decision [key=pending-reply-x]: choose destructive cleanup\nworking: routine follow-up\n",
-);
-const customReservedPrefixes = scopeForUnreadWake(state, false);
-if (!customReservedPrefixes.eligible || customReservedPrefixes.eligibleSeqs.join(",") !== "2" ||
-  customReservedPrefixes.needsDecisionKeys.join(",") !== "fm-window") {
-  throw new Error(`configured reserved prefixes lost an open stale decision: ${JSON.stringify(customReservedPrefixes)}`);
-}
-delete process.env.FM_CLASSIFY_RESERVED_KEY_PREFIXES;
-
 writeFileSync(`${state}/symlink-target.status`, "needs-decision: external choice\n");
 unlinkSync(`${state}/task-a.status`);
 symlinkSync(`${state}/symlink-target.status`, `${state}/task-a.status`);

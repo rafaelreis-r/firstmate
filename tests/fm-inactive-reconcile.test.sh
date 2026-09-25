@@ -136,13 +136,6 @@ reported_outcome_key() { # <home> <id> <state>
   return 1
 }
 
-prime_seen() { # <state> <status>
-  FM_STATE_OVERRIDE="$1" bash -c '
-    . "$1"
-    fm_wake_status_mark_current "$2" "$3"
-  ' _ "$ROOT/bin/fm-wake-lib.sh" "$1" "$2"
-}
-
 reap() { kill "$1" 2>/dev/null || true; wait "$1" 2>/dev/null || true; }
 
 # The main retains a terminal presentation receipt until the corresponding wake
@@ -713,7 +706,7 @@ test_nonterminal_and_captain_held_states_do_not_report() {
 # exempt from wedge escalation and emits no false wake.
 test_watcher_hook_and_idle_secondmate_exemption() {
   local out pid i
-  make_world watcher; write_child "$MAIN" child 'done: green'; prime_seen "$MAIN/state" "$MAIN/state/child.status"
+  make_world watcher; write_child "$MAIN" child 'done: green'; prime_status_seen "$MAIN/state" "$MAIN/state/child.status"
   out="$WORLD/watch.out"
   PATH="$WORLD/fakebin:$PATH" FM_HOME="$MAIN" FM_STATE_OVERRIDE="$MAIN/state" \
     FM_INACTIVE_RECONCILE_SECS=60 FM_INACTIVE_CREW_STATE_BIN="$WORLD/fakebin/fm-crew-state.sh" \
@@ -730,7 +723,7 @@ test_watcher_hook_and_idle_secondmate_exemption() {
   wait "$pid" 2>/dev/null || true
   grep -Fq 'check: inactive-outcome' "$out" || fail "watcher did not surface its reconciliation result"
 
-  make_world idle-secondmate; bind_secondmate local; write_mate_meta; prime_seen "$MAIN/state" "$MAIN/state/mate.status"
+  make_world idle-secondmate; bind_secondmate local; write_mate_meta; prime_status_seen "$MAIN/state" "$MAIN/state/mate.status"
   PATH="$WORLD/fakebin:$PATH" FM_HOME="$MAIN" FM_STATE_OVERRIDE="$MAIN/state" FM_POLL=1 FM_SIGNAL_GRACE=1 \
     FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$WORLD/idle.out" 2>&1 &
   pid=$!; sleep 2; kill -0 "$pid" 2>/dev/null || fail "idle secondmate watcher exited unexpectedly"; reap "$pid"
@@ -746,7 +739,7 @@ test_watcher_poll_delivers_child_ledger_line_to_parent() {
   local pid i key
   make_world watcher-ledger; bind_secondmate local
   write_child "$MATE" child 'done: PR https://example.test/owner/repo/pull/1 checks green'
-  prime_seen "$MATE/state" "$MATE/state/child.status"
+  prime_status_seen "$MATE/state" "$MATE/state/child.status"
   PATH="$WORLD/fakebin:$PATH" FM_HOME="$MATE" FM_STATE_OVERRIDE="$MATE/state" FM_DATA_OVERRIDE="$MATE/data" \
     FM_CONFIG_OVERRIDE="$MATE/config" FM_INACTIVE_RECONCILE_SECS=60 \
     FM_INACTIVE_CREW_STATE_BIN="$WORLD/fakebin/fm-crew-state.sh" FM_FORGE_LOG="$WORLD/forge.log" \

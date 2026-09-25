@@ -11,8 +11,8 @@
 # These tests pin:
 #   1. fm_composer_strip_ghost drops dim/faint AND dark-truecolor runs, keeping
 #      normal-intensity, brightly-coloured text.
-#   2. fm_pane_input_pending reads a ghost-only composer (either style) as NOT
-#      pending, while still treating real (normal/bright) text as pending.
+#   2. fm_tmux_composer_state reads a ghost-only composer (either style) as
+#      empty, while still reading real (normal/bright) text as pending.
 #   3. The tmux reader structurally scans every row of a multi-row composer.
 #   4. The human/LLM-facing capture path (fm-peek.sh) stays PLAIN - no escape codes
 #      ever reach firstmate's context.
@@ -182,75 +182,73 @@ test_strip_ghost_keeps_muse_composer_colors() {
   pass "fm_composer_strip_ghost keeps muse's near-threshold glyph and its typed text"
 }
 
-# --- fm_pane_input_pending: dim ghost is not pending ------------------------
+# --- fm_tmux_composer_state: dim ghost is not pending ----------------------
 
 test_dim_ghost_only_composer_is_not_pending() {
-  local dir fb capture
+  local dir fb capture out
   dir="$TMP_ROOT/ghost-only"; mkdir -p "$dir"
   fb=$(make_fake_tmux "$dir")
   capture="$dir/styled.txt"
   # The exact rendering claude emits: a normal prompt glyph + a DIM predicted prompt.
   printf '\xe2\x9d\xaf \033[2mWhat is the largest country by area?\033[0m\n' > "$capture"
-  if PATH="$fb:$PATH" FM_FAKE_STYLED="$capture" FM_FAKE_CY=0 \
-     fm_pane_input_pending "fakepane"; then
-    fail "dim ghost-only composer falsely read as pending"
-  fi
-  pass "fm_pane_input_pending: a dim ghost-only composer is NOT pending"
+  out=$(PATH="$fb:$PATH" FM_FAKE_STYLED="$capture" FM_FAKE_CY=0 \
+    fm_tmux_composer_state "fakepane")
+  [ "$out" = empty ] || fail "dim ghost-only composer falsely read as pending, got '$out'"
+  pass "fm_tmux_composer_state: a dim ghost-only composer is NOT pending"
 }
 
 test_dim_ghost_inside_bordered_composer_is_not_pending() {
-  local dir fb capture
+  local dir fb capture out
   dir="$TMP_ROOT/ghost-bordered"; mkdir -p "$dir"
   fb=$(make_fake_tmux "$dir")
   capture="$dir/styled.txt"
   # Bordered composer (claude box) holding only dim ghost text.
   printf '╭─────────────────────────────────────╮\n│ \033[2mtry the other approach instead\033[0m      │\n╰─────────────────────────────────────╯\n' > "$capture"
-  if PATH="$fb:$PATH" FM_FAKE_STYLED="$capture" FM_FAKE_CY=1 \
-     fm_pane_input_pending "fakepane"; then
-    fail "dim ghost in a bordered composer falsely read as pending"
-  fi
-  pass "fm_pane_input_pending: dim ghost inside a bordered composer is NOT pending"
+  out=$(PATH="$fb:$PATH" FM_FAKE_STYLED="$capture" FM_FAKE_CY=1 \
+    fm_tmux_composer_state "fakepane")
+  [ "$out" = empty ] || fail "dim ghost in a bordered composer falsely read as pending, got '$out'"
+  pass "fm_tmux_composer_state: dim ghost inside a bordered composer is NOT pending"
 }
 
 test_normal_text_still_pending() {
-  local dir fb capture
+  local dir fb capture out
   dir="$TMP_ROOT/real-text"; mkdir -p "$dir"
   fb=$(make_fake_tmux "$dir")
   capture="$dir/styled.txt"
   # Real human text, normal intensity - must still read as pending.
   printf '\xe2\x9d\xaf fix findings 1 and 3, skip 2\n' > "$capture"
-  PATH="$fb:$PATH" FM_FAKE_STYLED="$capture" FM_FAKE_CY=0 \
-    fm_pane_input_pending "fakepane" \
-    || fail "real typed text was not detected as pending"
-  pass "fm_pane_input_pending: normal-intensity typed text is still pending"
+  out=$(PATH="$fb:$PATH" FM_FAKE_STYLED="$capture" FM_FAKE_CY=0 \
+    fm_tmux_composer_state "fakepane")
+  [ "$out" = pending ] || fail "real typed text was not detected as pending, got '$out'"
+  pass "fm_tmux_composer_state: normal-intensity typed text is still pending"
 }
 
 test_colored_text_with_2_payload_still_pending() {
-  local dir fb capture
+  local dir fb capture out
   dir="$TMP_ROOT/colored-text"; mkdir -p "$dir"
   fb=$(make_fake_tmux "$dir")
   capture="$dir/styled.txt"
   printf '\xe2\x9d\xaf \033[38;5;2mgreen typed\033[0m\n' > "$capture"
-  PATH="$fb:$PATH" FM_FAKE_STYLED="$capture" FM_FAKE_CY=0 \
-    fm_pane_input_pending "fakepane" \
-    || fail "8-bit colored typed text was not detected as pending"
+  out=$(PATH="$fb:$PATH" FM_FAKE_STYLED="$capture" FM_FAKE_CY=0 \
+    fm_tmux_composer_state "fakepane")
+  [ "$out" = pending ] || fail "8-bit colored typed text was not detected as pending, got '$out'"
   printf '\xe2\x9d\xaf \033[38;2;224;222;244mtruecolor typed\033[0m\n' > "$capture"
-  PATH="$fb:$PATH" FM_FAKE_STYLED="$capture" FM_FAKE_CY=0 \
-    fm_pane_input_pending "fakepane" \
-    || fail "bright truecolor typed text was not detected as pending"
+  out=$(PATH="$fb:$PATH" FM_FAKE_STYLED="$capture" FM_FAKE_CY=0 \
+    fm_tmux_composer_state "fakepane")
+  [ "$out" = pending ] || fail "bright truecolor typed text was not detected as pending, got '$out'"
   printf '\xe2\x9d\xaf \033[58;5;2munderline-color typed\033[0m\n' > "$capture"
-  PATH="$fb:$PATH" FM_FAKE_STYLED="$capture" FM_FAKE_CY=0 \
-    fm_pane_input_pending "fakepane" \
-    || fail "underline-colored typed text was not detected as pending"
+  out=$(PATH="$fb:$PATH" FM_FAKE_STYLED="$capture" FM_FAKE_CY=0 \
+    fm_tmux_composer_state "fakepane")
+  [ "$out" = pending ] || fail "underline-colored typed text was not detected as pending, got '$out'"
   printf '\xe2\x9d\xaf \033[58::5::2mcolon underline typed\033[0m\n' > "$capture"
-  PATH="$fb:$PATH" FM_FAKE_STYLED="$capture" FM_FAKE_CY=0 \
-    fm_pane_input_pending "fakepane" \
-    || fail "colon underline typed text was not detected as pending"
-  pass "fm_pane_input_pending: bright colored text with 2 payloads is still pending"
+  out=$(PATH="$fb:$PATH" FM_FAKE_STYLED="$capture" FM_FAKE_CY=0 \
+    fm_tmux_composer_state "fakepane")
+  [ "$out" = pending ] || fail "colon underline typed text was not detected as pending, got '$out'"
+  pass "fm_tmux_composer_state: bright colored text with 2 payloads is still pending"
 }
 
 test_dark_truecolor_ghost_only_composer_is_not_pending() {
-  local dir fb capture
+  local dir fb capture out
   dir="$TMP_ROOT/grok-ghost"; mkdir -p "$dir"
   fb=$(make_fake_tmux "$dir")
   capture="$dir/styled.txt"
@@ -258,11 +256,10 @@ test_dark_truecolor_ghost_only_composer_is_not_pending() {
   # placeholder. It must read NOT pending (the grok TRUECOLOR gap, now covered by
   # the same ANSI-aware owner as claude's dim ghost).
   printf '\xe2\x9d\xaf \033[38;2;50;47;70mType a message...\033[0m\n' > "$capture"
-  if PATH="$fb:$PATH" FM_FAKE_STYLED="$capture" FM_FAKE_CY=0 \
-     fm_pane_input_pending "fakepane"; then
-    fail "dark truecolor ghost-only composer falsely read as pending"
-  fi
-  pass "fm_pane_input_pending: a dark truecolor ghost-only composer (grok placeholder) is NOT pending"
+  out=$(PATH="$fb:$PATH" FM_FAKE_STYLED="$capture" FM_FAKE_CY=0 \
+    fm_tmux_composer_state "fakepane")
+  [ "$out" = empty ] || fail "dark truecolor ghost-only composer falsely read as pending, got '$out'"
+  pass "fm_tmux_composer_state: a dark truecolor ghost-only composer (grok placeholder) is NOT pending"
 }
 
 test_dark_truecolor_bare_shell_prompt_is_unknown() {
@@ -281,17 +278,17 @@ test_dark_truecolor_bare_shell_prompt_is_unknown() {
 }
 
 test_real_text_with_trailing_ghost_is_pending() {
-  local dir fb capture
+  local dir fb capture out
   dir="$TMP_ROOT/mixed"; mkdir -p "$dir"
   fb=$(make_fake_tmux "$dir")
   capture="$dir/styled.txt"
   # A human typed "deploy" and claude appended a dim ghost completion. The real
   # text must win - the composer is pending.
   printf '\xe2\x9d\xaf deploy\033[2m the staging environment now\033[0m\n' > "$capture"
-  PATH="$fb:$PATH" FM_FAKE_STYLED="$capture" FM_FAKE_CY=0 \
-    fm_pane_input_pending "fakepane" \
-    || fail "real text with a trailing ghost completion was not detected as pending"
-  pass "fm_pane_input_pending: real text plus a trailing ghost run is still pending"
+  out=$(PATH="$fb:$PATH" FM_FAKE_STYLED="$capture" FM_FAKE_CY=0 \
+    fm_tmux_composer_state "fakepane")
+  [ "$out" = pending ] || fail "real text with a trailing ghost completion was not detected as pending, got '$out'"
+  pass "fm_tmux_composer_state: real text plus a trailing ghost run is still pending"
 }
 
 # --- fm_tmux_composer_state: structural multi-row box scan ------------------
@@ -560,15 +557,6 @@ test_all_tmux_harness_composers_share_classification() {
   pass "fm_tmux_composer_state: all tmux harnesses share empty and pending classification"
 }
 
-test_unrecognized_state_defers_input_guard() {
-  (
-    # shellcheck disable=SC2329
-    fm_tmux_composer_state() { printf 'future-state'; }
-    fm_pane_input_pending "fakepane"
-  ) || fail "an unrecognized composer state should defer the input guard"
-  pass "fm_pane_input_pending: unrecognized states defer by default"
-}
-
 test_single_capture_leaves_no_fallback_race() {
   # The old reader captured twice (a full-pane scan, then a separate
   # cursor-row band capture), so a pane redraw between the two could hand the
@@ -707,7 +695,6 @@ test_unproved_empty_geometry_fails_closed
 test_differing_widths_use_asymmetric_verdicts
 test_wide_composer_text_is_pending
 test_all_tmux_harness_composers_share_classification
-test_unrecognized_state_defers_input_guard
 test_single_capture_leaves_no_fallback_race
 test_absent_tmux_identity_keeps_enclosed_bare_verdict
 test_legitimate_empty_routes_remain_empty

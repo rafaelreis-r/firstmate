@@ -138,13 +138,6 @@ fm_pf_dir_has_entry() {
 fm_pf_has_registrations() { fm_pf_dir_has_entry "$(fm_pf_registry_dir "$1")"; }
 fm_pf_has_events()        { fm_pf_dir_has_entry "$(fm_pf_events_dir "$1")"; }
 
-# fm_pf_active <home> <state>: both gates, in order. The single predicate every
-# caller outside the relay path should use before doing any public-followup work.
-fm_pf_active() {
-  fm_pf_relay_active "$1" || return 1
-  fm_pf_has_registrations "$2" || fm_pf_has_events "$2"
-}
-
 # --- identifiers ------------------------------------------------------------
 
 # fm_pf_slug_valid <value>: obligation ids, relation ids, work ids, and request

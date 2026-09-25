@@ -2640,12 +2640,6 @@ test_projection_reclaim_replaces_only_exact_husk_and_advances_binding() {
 }
 
 
-# --- workspace_find: scoped to THIS home's own label, not just any match ----
-
-
-# --- list_live: scoped to this home's own workspace only ---------------------
-
-
 # --- target parsing, key normalization ---------------------------------------
 
 
@@ -3411,7 +3405,7 @@ test_send_text_submit_confirms_despite_codex_idle_tip_composer() {
 }
 
 # Companion regression for the pre-injection empty-box guard itself
-# (bin/fm-supervise-daemon.sh's pane_input_pending): a real Codex idle
+# (inject_msg's composer guard in bin/fm-supervise-daemon.sh): a real Codex idle
 # composer can show faint ghost suggestions after the bare `›` prompt.
 # The guard must ignore that faint suggestion text, otherwise away-mode
 # escalation delivery defers forever even though the human has typed nothing.
@@ -3427,7 +3421,7 @@ test_composer_state_codex_dynamic_idle_tip_reads_empty_when_faint() {
 }
 
 # Regression guard for the PRE-injection empty-box guard itself
-# (bin/fm-supervise-daemon.sh's pane_input_pending, dispatched via
+# (inject_msg's composer guard in bin/fm-supervise-daemon.sh, dispatched via
 # fm_backend_composer_state -> fm_backend_herdr_composer_state): this task
 # changes ONLY submit confirmation, so genuine unsubmitted text in the
 # composer must still read 'pending' and the guard must still refuse to

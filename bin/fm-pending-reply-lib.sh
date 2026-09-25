@@ -816,28 +816,6 @@ fm_pending_reply_busy_state_from_observation() {  # <record-path> <observation>
   esac
 }
 
-# Explicit turn-completion proof (for tests and turn-end backends that surface
-# a completion event without a busy/idle pair).
-fm_pending_reply_mark_turn_completed() {  # <state-dir> <corr_id> [which: request|recovery]
-  local state=$1 corr=$2 which=${3:-request}
-  local rec phase field now
-  rec=$(fm_pending_reply_path "$state" "$corr")
-  [ -f "$rec" ] || return 1
-  phase=$(fm_pending_reply_get "$rec" phase)
-  case "$which" in
-    request) field=request_turn_completed_epoch ;;
-    recovery) field=recovery_turn_completed_epoch ;;
-    *) return 2 ;;
-  esac
-  now=$(fm_pending_reply_now)
-  fm_pending_reply_set "$rec" "$field" "$now" || return 1
-  # Keep phase consistent with which turn completed.
-  if [ "$which" = recovery ] && [ "$phase" = awaiting_report ]; then
-    : # recovery completion only meaningful after recovery_sent
-  fi
-  return 0
-}
-
 # --- remote reply-channel freshness -----------------------------------------
 #
 # A LOCAL secondmate appends its report straight into the parent's
@@ -1544,20 +1522,4 @@ fm_pending_reply_tick() {  # <state-dir>
     fm_pending_reply_tick_one "$state" "$corr" "$busy" "$sm_home" || true
   done
   return 0
-}
-
-# True when any open (non-resolved) pending reply exists for a task.
-fm_pending_reply_task_has_open() {  # <state-dir> <task_id>
-  local state=$1 task_id=$2 dir rec phase tid
-  dir=$(fm_pending_reply_dir "$state")
-  [ -d "$dir" ] || return 1
-  for rec in "$dir"/*; do
-    [ -f "$rec" ] || continue
-    tid=$(fm_pending_reply_get "$rec" task_id)
-    [ "$tid" = "$task_id" ] || continue
-    phase=$(fm_pending_reply_get "$rec" phase)
-    [ "$phase" != resolved ] || continue
-    return 0
-  done
-  return 1
 }

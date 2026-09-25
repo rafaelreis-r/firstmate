@@ -49,7 +49,7 @@ pass() { printf 'ok - %s\n' "$1"; }
 
 cleanup_all() {
   if [ -n "${DAEMON_PID:-}" ]; then
-    afk_exit "${STATE_DIR:-}" 2>/dev/null || true
+    rm -f "${STATE_DIR:-}/.afk" 2>/dev/null || true
     kill "$DAEMON_PID" 2>/dev/null || true
     wait "$DAEMON_PID" 2>/dev/null || true
   fi
@@ -68,7 +68,7 @@ mkdir -p "$STATE_DIR"
 LOG_FILE="$STATE_DIR/submitted.log"
 : > "$LOG_FILE"
 
-# Source the daemon to get FM_INJECT_MARK, afk_enter, afk_exit.
+# Source the daemon to get FM_INJECT_MARK and the backend composer reader.
 # shellcheck source=/dev/null
 . "$DAEMON"
 
@@ -193,7 +193,7 @@ start_daemon() {
 
 stop_daemon() {
   [ -n "${DAEMON_PID:-}" ] || return 0
-  afk_exit "$STATE_DIR" 2>/dev/null || true
+  rm -f "$STATE_DIR/.afk" 2>/dev/null || true
   kill "$DAEMON_PID" 2>/dev/null || true
   wait "$DAEMON_PID" 2>/dev/null || true
   DAEMON_PID=""
@@ -218,22 +218,23 @@ reset_state() {
   : > "$LOG_FILE"
 }
 
-# --- pane_input_pending environment self-check ------------------------------
-# Verify that pane_input_pending (which uses cursor_y + capture-pane) can detect
-# typed text in this tmux environment. If it can't, the e2e cannot prove the
+# --- composer-state environment self-check ----------------------------------
+# Verify that the composer reader inject_msg uses (fm_backend_composer_state,
+# which reads cursor_y + capture-pane) sees typed text as unsafe in this tmux
+# environment. If it can't, the e2e cannot prove the
 # operator-visible injection contracts it owns.
 
-selfcheck_pane_input_pending() {
+selfcheck_composer_pending() {
   local check_text="selfcheck-marker-12345"
   "$REAL_TMUX" -L "$SOCKET" send-keys -t "$SUPERVISOR_PANE" -l "$check_text"
-  if wait_for_pane_input_pending; then
+  if wait_for_composer_pending; then
     # Detected - clean up the text and proceed.
     "$REAL_TMUX" -L "$SOCKET" send-keys -t "$SUPERVISOR_PANE" Enter
     sleep 0.3
     return 0
   fi
   # Not detected - print diagnostics and fail.
-  echo "pane_input_pending cannot detect typed text in this tmux environment" >&2
+  echo "the composer reader cannot detect typed text in this tmux environment" >&2
   local _cy _line
   _cy=$("$REAL_TMUX" -L "$SOCKET" display-message -p -t "$SUPERVISOR_PANE" '#{cursor_y}' 2>/dev/null)
   echo "  cursor_y=$_cy" >&2
@@ -242,13 +243,13 @@ selfcheck_pane_input_pending() {
   _line=$("$REAL_TMUX" -L "$SOCKET" capture-pane -p -t "$SUPERVISOR_PANE" 2>/dev/null | sed -n "$((_cy + 1))p")
   echo "  cursor line: '$_line'" >&2
   "$REAL_TMUX" -L "$SOCKET" send-keys -t "$SUPERVISOR_PANE" Enter
-  fail "pane_input_pending self-check failed"
+  fail "composer-state self-check failed"
 }
 
-wait_for_pane_input_pending() {
+wait_for_composer_pending() {
   local i=0
   while [ "$i" -lt 30 ]; do
-    if PATH="$TMUX_SHIM_DIR:$PATH" pane_input_pending "$SUPERVISOR_PANE"; then
+    if [ "$(PATH="$TMUX_SHIM_DIR:$PATH" fm_backend_composer_state tmux "$SUPERVISOR_PANE" 2>/dev/null)" != empty ]; then
       return 0
     fi
     sleep 0.1
@@ -257,19 +258,19 @@ wait_for_pane_input_pending() {
   return 1
 }
 
-selfcheck_pane_input_pending
+selfcheck_composer_pending
 
 # --- Scenario A: human-partial-input ----------------------------------------
 
 test_scenario_a() {
   reset_state
-  afk_enter "$STATE_DIR"
+  printf 'away\n' > "$STATE_DIR/.afk"
   start_daemon
 
   # Type partial text into the supervisor pane with NO Enter. This simulates the
   # captain returning and starting to type before afk has been cleared.
   "$REAL_TMUX" -L "$SOCKET" send-keys -t "$SUPERVISOR_PANE" -l "human draft text"
-  wait_for_pane_input_pending \
+  wait_for_composer_pending \
     || fail "Scenario A: human draft text did not become detectable as pending input"
 
   # Write a captain-relevant status to trigger a real escalation through the
@@ -335,7 +336,7 @@ test_scenario_a() {
 
 test_scenario_b() {
   reset_state
-  afk_enter "$STATE_DIR"
+  printf 'away\n' > "$STATE_DIR/.afk"
 
   # Arm the swallow: the daemon's first Enter will be dropped by the shim.
   touch "$STATE_DIR/.swallow-enter"
@@ -385,7 +386,7 @@ test_scenario_b() {
 
 test_scenario_c() {
   reset_state
-  afk_enter "$STATE_DIR"
+  printf 'away\n' > "$STATE_DIR/.afk"
   start_daemon
 
   echo "done: PR https://example.test/pr/300" > "$STATE_DIR/fake-c1.status"

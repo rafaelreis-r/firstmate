@@ -751,10 +751,7 @@ EOF
     fail "hold accepted a changed title on an existing task"
   fi
 
-  FM_STATE_OVERRIDE="$home/state" bash -c '
-    . "$1"
-    fm_wake_status_mark_current "$2" "$3"
-  ' _ "$ROOT/bin/fm-wake-lib.sh" "$home/state" "$home/state/$id.status" \
+  prime_status_seen "$home/state" "$home/state/$id.status" \
     || fail "could not prime the announced decision baseline"
   run_captain "$home" complete "$id" sample-route-call >/dev/null \
     || fail "shared investigation completion gate failed"

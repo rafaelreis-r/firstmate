@@ -129,17 +129,6 @@ SH
   printf '%s\n' "$fakebin/fm-crew-state.sh"
 }
 
-# Prime <file>'s .seen-* marker to its CURRENT signature through the production
-# signature owner (bin/fm-wake-lib.sh), so a test can declare "everything in
-# this file was already surfaced or deliberately absorbed" before exercising
-# the next wake, self-announced append, or annotation decision.
-prime_status_seen() {  # <state> <file>
-  FM_STATE_OVERRIDE="$1" bash -c '
-    . "$1"
-    fm_wake_status_mark_current "$2" "$3"
-  ' _ "$ROOT/bin/fm-wake-lib.sh" "$1" "$2"
-}
-
 # Print the generation from a recovery marker token of any status/kind.
 recovery_marker_generation() {  # <marker-file>
   sed -n 's/^[^:]*:[^:]*:\(.*\)$/\1/p' "$1"
@@ -167,7 +156,7 @@ case "${1:-}" in
   display-message)
     [ "${FM_FAKE_TMUX_PANE_ALIVE:-1}" = "1" ] || exit 1
     _print=0
-    # Return cursor_y when the format asks for it (pane_input_pending).
+    # Return cursor_y when the format asks for it (the composer reader).
     for _a in "$@"; do
       case "$_a" in *cursor_y*) printf '%s\n' "${FM_FAKE_TMUX_CURSOR_Y:-0}"; exit 0 ;; esac
       [ "$_a" = "-p" ] && _print=1
@@ -205,7 +194,7 @@ case "${1:-}" in
       case "$1" in
         -l) shift; [ "$#" -gt 0 ] && {
           printf '%s\n' "$1" >> "${FM_FAKE_TMUX_SENT:-/dev/null}"
-          # Reflect sent text into capture so pane_input_pending sees it as
+          # Reflect sent text into capture so the composer reader sees it as
           # pending input (text in the composer).
           [ -n "${FM_FAKE_TMUX_CAPTURE:-}" ] && printf '%s\n' "$1" >> "$FM_FAKE_TMUX_CAPTURE"
         } ;;

@@ -238,8 +238,6 @@ for _ in $(seq 1 6); do
   [ "$RETURN_SEEN" -eq 1 ] && break
 done
 [ "$RETURN_SEEN" -eq 1 ] || fail "real Pi did not receive the unmarked return request; agent=$("$LAB_HELPER" run "$SESSION" agent get "$PRIMARY_PANE" 2>/dev/null | jq -c '.result.agent // empty' 2>/dev/null); pane: $("$LAB_HELPER" run "$SESSION" pane read "$PRIMARY_PANE" --source recent --lines 40 2>/dev/null)"
-RETURN_PROMPT=$(jq -r 'select(.prompt == "Synthetic Bearings request") | .prompt' "$CAPTURE" | tail -1)
-should_exit_afk "$STATE" "$RETURN_PROMPT" || fail "unmarked Pi return request did not trigger the away exit contract"
 assert_blocker_open 'before return catch-up'
 [ -f "$STATE/repair-task.meta" ] || fail "live blocker metadata disappeared before return catch-up"
 
