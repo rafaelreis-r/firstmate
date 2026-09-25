@@ -1125,6 +1125,7 @@ FM_WATCH_ARM_RETIRE_TIMEOUT_MS=1000   # milliseconds Pi/OpenCode wait for an unr
 FM_WATCH_REARM_RETRY_BASE_MS=250   # Pi/OpenCode adapter base delay for continuity restoration retries
 FM_WATCH_REARM_RETRY_MAX_MS=4000   # Pi/OpenCode adapter cap for exponential continuity retry delay
 FM_WATCH_REARM_RETRY_LIMIT=5   # Pi/omp/OpenCode adapter continuity retries before surfacing restoration failure; in Pi and omp the bound counts consecutive unhealthy cycles (docs/watcher-continuity.md "Ownership")
+FM_WATCH_SUBAGENT_CLEAR_TIMEOUT_MS=600000   # milliseconds the omp watch extension holds back a wake while a task-tool subagent session is open before sending anyway; bounds a subagent that never reaches session_shutdown
 FM_WATCH_CYCLE_LOG_MAX_BYTES=262144   # size cap for the arm-owned watcher lifecycle ledger
 FM_WATCH_CYCLE_LOG_KEEP_LINES=1000   # newest complete lifecycle rows considered when the ledger is capped
 FM_WATCHER_STALE_GRACE=300   # defaults to FM_GUARD_GRACE if set, else the poll-derived grace (docs/turnend-guard.md "Guard grace and the poll cadence"); seconds a live watcher lock may have a stale beacon before re-arm errors

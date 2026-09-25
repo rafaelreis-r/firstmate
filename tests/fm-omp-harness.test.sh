@@ -904,6 +904,103 @@ EOF
   pass ".omp watch extension: replacement backlog shares one doorbell and a later close wakes again after consumption"
 }
 
+# A subagent (omp's own task tool) runs as a fully separate session in this
+# same process: it gets its own session_start/session_shutdown, distinct from
+# main's. Before the fix, session_shutdown for ANY session unconditionally
+# stopped the shared generation, and a wake sent while a subagent's turn was
+# active landed in its transcript instead of main's (both reproduced against
+# a real omp 18.3.1 task-tool run before this test was written). This proves
+# neither happens: the arm survives a subagent's full open/close lifecycle,
+# and a wake produced while a second subagent is still open is held back
+# until that subagent closes, then reaches only the one fake main inbox.
+test_watch_extension_ignores_subagent_session_lifecycle() {
+  local repo home out status
+  repo="$TMP_ROOT/watch-subagent/repo"; home="$TMP_ROOT/watch-subagent/home"
+  install_omp_extension_fixture "$repo"
+  mkdir -p "$home/state"
+  cat > "$repo/bin/fm-watch-arm.sh" <<'SH'
+#!/usr/bin/env bash
+if [ "${1:-}" = --handling-delivered ]; then
+  exit 0
+fi
+state=${FM_HOME:?}/state
+count=$(cat "$state/.arm-count" 2>/dev/null || printf 0)
+count=$((count + 1))
+printf '%s\n' "$count" > "$state/.arm-count"
+printf 'watcher: started pid=%s (beacon 0s) recovery-generation=gen-%s\n' "$$" "$count"
+if [ "$count" -eq 1 ]; then
+  while [ ! -e "$state/.release-arm" ]; do sleep 0.05; done
+  printf 'stale: subagent-e2e:p1\n'
+  exit 0
+fi
+exec sleep 30
+SH
+  chmod +x "$repo/bin/fm-watch-arm.sh"
+  out=$(FM_HOME="$home" FM_ROOT_OVERRIDE="$repo" FM_OMP_ARM_READY_TIMEOUT_MS=10000 FM_WATCH_REARM_RETRY_LIMIT=1 FM_WATCH_REARM_RETRY_BASE_MS=5 FM_WATCH_REARM_RETRY_MAX_MS=10 \
+    EXT="$repo/.omp/extensions/fm-primary-omp-watch.ts" node --input-type=module 2>&1 <<'EOF'
+import { pathToFileURL } from "node:url";
+import { writeFileSync } from "node:fs";
+writeFileSync(`${process.env.FM_HOME}/state/.lock`, `${process.pid}\n`);
+const waitUntil = async (predicate, label, timeoutMs = 10000) => {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (predicate()) return;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  throw new Error(`timed out waiting for ${label}`);
+};
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const handlers = new Map(); let tool = null; const sent = [];
+const pi = {
+  on(e, h) { handlers.set(e, h); },
+  registerCommand() {},
+  registerTool(t) { tool = t; },
+  sendUserMessage(m, o) { sent.push({ m, o }); return undefined; },
+};
+// A distinct sessionManager.getHeader().parentSession is the only signal omp
+// gives an extension to tell a subagent apart from the primary session.
+const subagentCtx = (id) => ({ sessionManager: { getSessionId: () => id, getHeader: () => ({ parentSession: "/tmp/main.jsonl" }) } });
+const mod = await import(pathToFileURL(process.env.EXT).href);
+mod.default(pi);
+if (!tool || tool.name !== "fm_watch_arm_omp") throw new Error("fm_watch_arm_omp was not registered");
+const armed = await tool.execute();
+if (!/^watcher: started omp extension arm child 1;/.test(armed.content[0].text)) throw new Error(`unexpected arm result: ${armed.content[0].text}`);
+// A subagent that opens and fully closes before the arm child ever produces
+// anything must leave the primary's generation exactly as live as it found it.
+await handlers.get("session_start")({ type: "session_start" }, subagentCtx("sub-finished"));
+await handlers.get("session_shutdown")({}, subagentCtx("sub-finished"));
+const stillArmed = await tool.execute();
+if (!/^watcher: unchanged - omp extension already owns an arm child/.test(stillArmed.content[0].text)) {
+  throw new Error(`a finished subagent's lifecycle corrupted the primary's generation: ${stillArmed.content[0].text}`);
+}
+// A second subagent stays open while the arm child closes with an actionable
+// reason; the wake must not be sent while it is still open.
+await handlers.get("session_start")({ type: "session_start" }, subagentCtx("sub-open"));
+writeFileSync(`${process.env.FM_HOME}/state/.release-arm`, "\n");
+await sleep(800);
+if (sent.length !== 0) throw new Error(`the wake was sent while a subagent session was still open: ${JSON.stringify(sent)}`);
+// Closing the last open subagent must flush the held-back wake to main.
+await handlers.get("session_shutdown")({}, subagentCtx("sub-open"));
+await waitUntil(() => sent.length >= 1, "the wake deferred by the open subagent");
+if (sent.length !== 1) throw new Error(`expected exactly one wake once the subagent closed, saw ${sent.length}: ${JSON.stringify(sent)}`);
+if (!sent[0].m.startsWith("⁣FIRSTMATE_OP: v1 watcher: FIRSTMATE WATCHER WAKE: stale: subagent-e2e:p1")) throw new Error(`unexpected wake text: ${sent[0].m}`);
+if (sent[0].o?.deliverAs !== "followUp") throw new Error("wake must be delivered as a follow-up");
+// fm_watch_arm_omp must still work in main after every subagent above ended.
+const afterAll = await tool.execute();
+if (!/^watcher: unchanged - omp extension already owns an arm child/.test(afterAll.content[0].text)) {
+  throw new Error(`fm_watch_arm_omp stopped working in main after the subagents ended: ${afterAll.content[0].text}`);
+}
+await handlers.get("before_agent_start")({ type: "before_agent_start", prompt: sent[0].m }, {});
+await handlers.get("session_shutdown")({}, {});
+process.exit(0);
+EOF
+)
+  status=$?
+  expect_code 0 "$status" "omp watch extension subagent-session contract: $out"
+  [ -z "$out" ] || fail "omp watch extension subagent-session test printed output: $out"
+  pass ".omp watch extension: a subagent's session lifecycle never retires the primary's generation, and a wake held back by an open subagent reaches only main"
+}
+
 test_watch_extension_retry_arms_as_a_cold_start() {
   local repo home out status
   repo="$TMP_ROOT/watch-retry/repo"; home="$TMP_ROOT/watch-retry/home"
@@ -1158,4 +1255,5 @@ test_watch_extension_arms_and_delivers
 test_watch_extension_retry_arms_as_a_cold_start
 test_watch_extension_resurface_cycles_still_reach_the_retry_limit
 test_watch_extension_genuine_wake_clears_the_failure_count
+test_watch_extension_ignores_subagent_session_lifecycle
 test_watch_extension_drops_stale_replacement_records
