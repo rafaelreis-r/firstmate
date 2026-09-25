@@ -2572,15 +2572,34 @@ HPACE_RACE="$TMP_ROOT/registration-pacing-race"; new_home "$HPACE_RACE"
 fm_test_track_procevent_home "$HPACE_RACE"
 PACE_RACE_LOG="$TMP_ROOT/registration-pacing-race.log"
 pe_register "$HPACE_RACE" lavish pace-race-src -- "$FAST_SOURCE" "$PACE_RACE_LOG" >/dev/null
+PACE_RACE_CLAIM="$FM_PROCEVENT_CLAIM_ROOT/pace-race-src.claim"
+PACE_RACE_ORIGINAL=$(bash -c '. "$1/bin/fm-pr-lib.sh"; fm_pr_file_identity "$2"' _ \
+  "$ROOT" "$HPACE_RACE/state/procevent/pace-race-src.source") \
+  || fail "could not read the original pacing registration identity"
 FM_PROCEVENT_LAUNCH_FLOOR_SECONDS=3 pe "$HPACE_RACE" start pace-race-src >/dev/null
 FM_PROCEVENT_LAUNCH_FLOOR_SECONDS=3 \
   pe "$HPACE_RACE" start pace-race-src > "$TMP_ROOT/registration-pacing-race.out" 2>&1 &
 PACE_RACE_PID=$!
-wait_for "$FM_PROCEVENT_CLAIM_ROOT/pace-race-src.claim" \
-  || fail "the superseded pacing fixture did not claim its registration"
+# A claim record alone does not prove the second runner holds the original
+# registration: the first runner leaves its claim behind when a reconcile holds
+# the source lock as it exits, and reconciles from earlier cases share this
+# claim root. Wait for a live owner recorded against the original registration
+# (claim lines 2 and 6); otherwise the replacement below can land first and the
+# second runner then legitimately runs the new registration.
+pace_race_original_held() {
+  local pid
+  [ -s "$PACE_RACE_CLAIM" ] || return 1
+  pid=$(sed -n '2p' "$PACE_RACE_CLAIM")
+  kill -0 "$pid" 2>/dev/null \
+    && [ "$(sed -n '6p' "$PACE_RACE_CLAIM")" = "$PACE_RACE_ORIGINAL" ]
+}
+for _ in $(seq 1 100); do pace_race_original_held && break; sleep 0.1; done
+pace_race_original_held \
+  || fail "the superseded pacing fixture did not claim its original registration"
 [ "$(wc -l < "$PACE_RACE_LOG" | tr -d ' ')" = 1 ] \
   || fail "the superseded pacing fixture was not waiting on its launch floor"
-pe_register "$HPACE_RACE" lavish pace-race-src -- "$FAST_SOURCE" "$PACE_RACE_LOG" >/dev/null
+pe_register "$HPACE_RACE" lavish pace-race-src -- "$FAST_SOURCE" "$PACE_RACE_LOG" >/dev/null \
+  || fail "the pacing replacement registration failed"
 wait "$PACE_RACE_PID" || fail "the superseded paced runner failed"
 [ "$(wc -l < "$PACE_RACE_LOG" | tr -d ' ')" = 1 ] \
   || fail "the superseded paced runner invoked its stale command"
