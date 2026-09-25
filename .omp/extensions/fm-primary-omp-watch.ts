@@ -812,8 +812,12 @@ export default function (pi: ExtensionAPI) {
         }
         // A record omp has accepted but not consumed is neither redelivered
         // nor finished here: consumption finishes it, replacement replays it.
+        // A record whose arm is still the live child waits for that arm's
+        // close, which starts its successor: restoring it now would adopt the
+        // exiting arm as its own successor and end the rearm chain.
         const pending = owner.pendingActionables.find(
-          (item) => !item.delivered && !owner.unconsumedWakes.has(item.token),
+          (item) => !item.delivered && !owner.unconsumedWakes.has(item.token) &&
+            !(owner.child && armPendingActionable.get(owner.child) === item),
         );
         if (!pending) break;
         const existingClaim = replacementCoordinator.deliveries.get(pending.token);

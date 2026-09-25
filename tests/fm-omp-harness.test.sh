@@ -732,13 +732,15 @@ state=${FM_HOME:?}/state
 count=$(cat "$state/.arm-count" 2>/dev/null || printf 0)
 count=$((count + 1))
 printf '%s\n' "$count" > "$state/.arm-count"
-printf 'watcher: started pid=%s (beacon 0s) recovery-generation=gen-%s\n' "$$" "$count"
 if [ "$count" -le 4 ]; then
   message="stale: cohort:wR:p$count"
   printf '%s\n' "$message" >> "$state/.durable-wakes"
-  printf '%s\n' "$message"
+  # One write carries both lines, so the extension reads the successor's
+  # readiness and its own actionable close in the same stdout chunk.
+  printf 'watcher: started pid=%s (beacon 0s) recovery-generation=gen-%s\n%s\n' "$$" "$count" "$message"
   exit 0
 fi
+printf 'watcher: started pid=%s (beacon 0s) recovery-generation=gen-%s\n' "$$" "$count"
 if [ "$count" -eq 5 ]; then
   while [ ! -e "$state/.release-fifth-arm" ]; do sleep 0.05; done
   message='stale: cohort:wR:p5'
