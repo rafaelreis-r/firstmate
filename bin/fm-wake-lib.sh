@@ -921,6 +921,10 @@ fm_lock_try_acquire() {
   if fm_lock_try_create "$lockdir"; then
     return 0
   fi
+  # Stealing needs a stale entry to steal. With none on disk the create failed
+  # for another reason (e.g. the state directory is gone), and recursing into
+  # "$lockdir.steal" would fail the same way forever.
+  [ -e "$lockdir" ] || [ -L "$lockdir" ] || return 1
 
   fm_current_pid current || return 1
   pid=$(cat "$lockdir/pid" 2>/dev/null || true)
@@ -1015,6 +1019,7 @@ fm_lock_try_acquire() {
 fm_lock_acquire_wait() {
   local lockdir=$1
   while ! fm_lock_try_acquire "$lockdir"; do
+    [ -d "$(dirname "$lockdir")" ] || return 1
     sleep 0.1
   done
 }
@@ -1064,6 +1069,9 @@ fm_lock_acquire_wait_bounded() {
   if fm_lock_try_acquire "$lockdir"; then
     return 0
   fi
+  # Parent already gone: the timed helper would only rediscover that. Stop
+  # here instead of forking and burning the deadline on the same failure.
+  [ -d "$(dirname "$lockdir")" ] || return 1
 
   fm_current_pid caller_pid || return 1
   # shellcheck disable=SC2016 # Positional parameters expand in the child shell.
@@ -1618,6 +1626,7 @@ fm_autoarm_write_owned() {  # <state-dir> <gen> <outcome> [marker-file] [session
   pid=${BASHPID:-$$}
   i=0
   while ! fm_lock_try_acquire "$lock"; do
+    [ -d "$(dirname "$lock")" ] || return 1
     [ "$i" -lt 20 ] || return 1
     sleep 0.02
     i=$((i + 1))
@@ -1804,7 +1813,7 @@ fm_wake_clean_field() {
 
 fm_wake_append() {
   local status=0
-  fm_lock_acquire_wait "$FM_WAKE_QUEUE_LOCK"
+  fm_lock_acquire_wait "$FM_WAKE_QUEUE_LOCK" || return 1
   fm_wake_append_locked "$@" || status=$?
   fm_lock_release "$FM_WAKE_QUEUE_LOCK"
   return "$status"
@@ -1858,7 +1867,7 @@ fm_wake_queued_keys() {
     signal|stale|check|heartbeat) ;;
     *) printf 'fm_wake_queued_keys: invalid wake kind: %s\n' "$kind" >&2; return 2 ;;
   esac
-  fm_lock_acquire_wait "$FM_WAKE_QUEUE_LOCK"
+  fm_lock_acquire_wait "$FM_WAKE_QUEUE_LOCK" || return 1
   fm_wake_queued_keys_locked "$kind"
   fm_lock_release "$FM_WAKE_QUEUE_LOCK"
 }

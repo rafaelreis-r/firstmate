@@ -3522,6 +3522,7 @@ fm_backend_herdr_kill() {  # <target>
         lock_held=1
         break
       fi
+      [ -d "$(dirname "$lock_path")" ] || break
       sleep 0.1
       attempt=$((attempt + 1))
     done

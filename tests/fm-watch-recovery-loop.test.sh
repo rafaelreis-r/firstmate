@@ -156,8 +156,32 @@ EOF
   fi
   lock_pid=$(sed -n 's/^T1_LOCK_PID=//p' <<<"$out" | tail -1)
   messages=$(sed -n 's/^T1_MESSAGES=//p' <<<"$out" | tail -1)
+  arm_pid=
   if [ -n "$lock_pid" ]; then
+    arm_pid=$(ps -o ppid= -p "$lock_pid" 2>/dev/null | tr -d '[:space:]')
     kill -TERM "$lock_pid" 2>/dev/null || true
+  fi
+  if [ -n "$arm_pid" ] && [ "$arm_pid" != 1 ]; then
+    kill -TERM "$arm_pid" 2>/dev/null || true
+  fi
+  wait_gone() {  # <pid>
+    local pid=$1 i=0
+    [ -n "$pid" ] && [ "$pid" != 1 ] || return 0
+    while kill -0 "$pid" 2>/dev/null; do
+      [ "$i" -lt 50 ] || return 1
+      sleep 0.1
+      i=$((i + 1))
+    done
+  }
+  if ! wait_gone "$lock_pid"; then
+    kill -KILL "$lock_pid" 2>/dev/null || true
+    wait "$lock_pid" 2>/dev/null || true
+    fail "T1 watcher did not exit after TERM"
+  fi
+  if ! wait_gone "$arm_pid"; then
+    kill -KILL "$arm_pid" 2>/dev/null || true
+    wait "$arm_pid" 2>/dev/null || true
+    fail "T1 arm did not exit after TERM"
   fi
   expect_code 0 "$status" "an unacknowledged recovery must be announced at most once per generation: $out"
   [ "$messages" = 1 ] || fail "T1 did not report a single recovery follow-up: $out"
@@ -222,5 +246,48 @@ test_handling_successor_does_not_go_blind() {
   pass "a resurfacing handling successor stays alive and supervises instead of going blind"
 }
 
+# Removing the state directory while the watcher is alive, then terminating it,
+# must not leave the EXIT trap recursing on a lock that is no longer on disk.
+test_removed_state_term_exits() {
+  local dir home state child out i
+  dir=$(make_case removed-state-term)
+  home="$dir/home"
+  state="$dir/state"
+  mkdir -p "$home/data"
+  out="$dir/watch.out"
+  PATH="$dir/fakebin:$PATH" FM_HOME="$home" FM_STATE_OVERRIDE="$state" \
+    FM_POLL=1 FM_SIGNAL_GRACE=0 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 \
+    "$WATCH" >"$out" 2>&1 &
+  child=$!
+  i=0
+  while [ "$i" -lt 50 ]; do
+    [ "$(cat "$state/.watch.lock/pid" 2>/dev/null || true)" = "$child" ] && break
+    sleep 0.1
+    i=$((i + 1))
+  done
+  [ "$(cat "$state/.watch.lock/pid" 2>/dev/null || true)" = "$child" ] \
+    || { kill -TERM "$child" 2>/dev/null || true; wait "$child" 2>/dev/null || true; fail "watcher did not take the lock before state removal"; }
+  rm -rf "$state"
+  kill -TERM "$child" 2>/dev/null || true
+  i=0
+  while [ "$i" -lt 50 ]; do
+    kill -0 "$child" 2>/dev/null || break
+    sleep 0.1
+    i=$((i + 1))
+  done
+  if kill -0 "$child" 2>/dev/null; then
+    kill -KILL "$child" 2>/dev/null || true
+    wait "$child" 2>/dev/null || true
+    fail "watcher did not exit after its state directory was removed and it was terminated: $(tail -20 "$out" 2>/dev/null || true)"
+  fi
+  wait "$child" 2>/dev/null || true
+  if grep -q '\.steal\.steal' "$out" 2>/dev/null; then
+    fail "watcher stderr shows steal recursion after state removal: $(tail -5 "$out")"
+  fi
+  pass "watcher exits after its state directory is removed and it is terminated"
+}
+
+
 test_handling_successor_does_not_go_blind
 test_unacknowledged_recovery_is_announced_once_per_generation
+test_removed_state_term_exits
