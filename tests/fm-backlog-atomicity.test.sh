@@ -2450,7 +2450,7 @@ test_recovery_rejects_a_legacy_close_without_an_incarnation() {
   pass "session start rejects an unversioned close marker"
 }
 
-test_bootstrap_rechecks_worker_record_boundary_after_locking() {
+test_bootstrap_rechecks_worker_record_boundary_after_lock_attempt() {
   local case_dir foreign_case home foreign_state id real_ln out rc=0
   id=atomic-bootstrap-state-swap-b13
   case_dir=$(make_home bootstrap-state-swap)
@@ -2478,12 +2478,12 @@ SH
 
   out=$(run_bootstrap "$case_dir") || rc=$?
   [ "$rc" -ne 0 ] || fail "bootstrap trusted a worker record after its state boundary changed"
-  assert_contains "$out" "post-lock worker record check refused" \
-    "bootstrap did not report the post-lock state-boundary failure"
+  assert_contains "$out" "worker record check refused" \
+    "bootstrap did not report the state-boundary failure after its lock attempt"
   [ "$(row_state "$case_dir" "$id")" = queued ] \
     || fail "bootstrap changed the local row after reading through a swapped state path"
   assert_present "$foreign_state/$id.meta" "bootstrap removed the foreign worker record"
-  pass "bootstrap rechecks worker-record containment after locking"
+  pass "bootstrap rechecks worker-record containment after its lock attempt"
 }
 
 test_lifecycle_refuses_ancestor_symlinks_outside_home_roots() {
@@ -3071,7 +3071,7 @@ test_recovery_rejects_invalid_close_arguments
 test_recovery_rejects_a_symlinked_close_marker
 test_recovery_drops_a_close_for_a_newer_meta_incarnation
 test_recovery_rejects_a_legacy_close_without_an_incarnation
-test_bootstrap_rechecks_worker_record_boundary_after_locking
+test_bootstrap_rechecks_worker_record_boundary_after_lock_attempt
 test_lifecycle_refuses_ancestor_symlinks_outside_home_roots
 test_same_home_state_override_remains_supported
 test_bootstrap_refuses_a_symlinked_state_directory_before_reconciliation

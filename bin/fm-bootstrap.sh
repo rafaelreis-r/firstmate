@@ -1285,9 +1285,19 @@ backlog_record_reconcile() {
     label=$(basename "$marker" .backlog-close)
     control_lock="$STATE/.control-$label.lock"
     meta_lock=$(fm_meta_lock_path "$STATE/$label.meta") || continue
-    fm_lock_try_acquire "$control_lock" || continue
+    if ! fm_lock_try_acquire "$control_lock"; then
+      if ! fm_backlog_record_present "$marker" "pending-close record" "$STATE"; then
+        echo "BACKLOG_RECONCILE: pending-close record check refused after lock attempt: $FM_BACKLOG_TRANSITION_ERROR"
+        return 2
+      fi
+      continue
+    fi
     if ! fm_lock_try_acquire "$meta_lock"; then
       fm_lock_release "$control_lock"
+      if ! fm_backlog_record_present "$marker" "pending-close record" "$STATE"; then
+        echo "BACKLOG_RECONCILE: pending-close record check refused after lock attempt: $FM_BACKLOG_TRANSITION_ERROR"
+        return 2
+      fi
       continue
     fi
     if fm_backlog_close_marker_replay "$STATE" "$marker" "$DATA"; then
@@ -1336,7 +1346,13 @@ backlog_record_reconcile() {
     fi
     id=$(basename "$meta" .meta)
     meta_lock=$(fm_meta_lock_path "$meta") || continue
-    fm_lock_try_acquire "$meta_lock" || continue
+    if ! fm_lock_try_acquire "$meta_lock"; then
+      if ! fm_backlog_record_present "$meta" "task record" "$STATE"; then
+        echo "BACKLOG_RECONCILE: $id: worker record check refused after lock attempt: $FM_BACKLOG_TRANSITION_ERROR"
+        return 2
+      fi
+      continue
+    fi
     if [ -e "$STATE/$id.backlog-close" ] || [ -L "$STATE/$id.backlog-close" ]; then
       fm_lock_release "$meta_lock"
       continue

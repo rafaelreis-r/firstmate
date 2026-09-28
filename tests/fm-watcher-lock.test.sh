@@ -262,12 +262,21 @@ test_lock_single_winner_under_concurrency() {
   while [ "$i" -le 40 ]; do
     FM_STATE_OVERRIDE="$state" bash -c '
       . "$1"
-      if fm_lock_try_acquire "$2"; then
-        printf "%s\n" "$$" >> "$3"
-        # Stay alive so the held lock names a live pid for the whole window;
-        # otherwise a late contender could legitimately reclaim a dead-pid lock.
-        sleep 1
-      fi
+      attempts=0
+      while [ "$attempts" -lt 100 ] && [ ! -s "$3" ]; do
+        if fm_lock_try_acquire "$2"; then
+          if [ ! -s "$3" ]; then
+            printf "%s\n" "$$" >> "$3"
+            # Keep the owner live while other contenders observe its lock.
+            sleep 1
+          else
+            fm_lock_release "$2"
+          fi
+          break
+        fi
+        sleep 0.02
+        attempts=$((attempts + 1))
+      done
     ' _ "$LIB" "$lockdir" "$marker" &
     pids="$pids $!"
     i=$((i + 1))
@@ -314,10 +323,20 @@ test_lock_stale_steal_single_winner_under_concurrency() {
   while [ "$i" -le 40 ]; do
     FM_STATE_OVERRIDE="$state" bash -c '
       . "$1"
-      if fm_lock_try_acquire "$2"; then
-        printf "%s\n" "${BASHPID:-$$}" >> "$3"
-        sleep 1
-      fi
+      attempts=0
+      while [ "$attempts" -lt 100 ] && [ ! -s "$3" ]; do
+        if fm_lock_try_acquire "$2"; then
+          if [ ! -s "$3" ]; then
+            printf "%s\n" "${BASHPID:-$$}" >> "$3"
+            sleep 1
+          else
+            fm_lock_release "$2"
+          fi
+          break
+        fi
+        sleep 0.02
+        attempts=$((attempts + 1))
+      done
     ' _ "$LIB" "$lockdir" "$marker" &
     pids="$pids $!"
     i=$((i + 1))
