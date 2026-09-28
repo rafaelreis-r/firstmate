@@ -1,0 +1,13 @@
+After serial runs of tests/fm-watch-recovery-loop.test.sh, tests/fm-watcher-lock.test.sh, tests/fm-wake-queue.test.sh, tests/fm-watch-arm.test.sh (all exit 0).
+Commands: ps -axo pid,ppid,command | grep fm-watch ; lsof -nP +L1
+T1 watcher PID 74500 still present: False
+fm-watch.sh or fm-watch-arm.sh in this worktree or test roots: 0
+Other live watchers (excluded; untouched): 5
+69468 74833 bash /Users/rafaelreisr/dev/firstmate/bin/fm-watch.sh
+74808  7283 bash /Users/rafaelreisr/dev/firstmate/bin/fm-watch-arm.sh --restart
+74833 74808 bash /Users/rafaelreisr/dev/firstmate/bin/fm-watch.sh
+54972 22377 bash /Users/rafaelreisr/dev/firstmate/bin/fm-watch-arm.sh --restart
+54994 54972 bash /Users/rafaelreisr/dev/firstmate/bin/fm-watch.sh
+Deleted open files from this worktree or test roots: 0
+Deleted open files from /T/fm-* or /tmp/fm-* test roots: 0
+All lsof +L1 rows inspected: 1083

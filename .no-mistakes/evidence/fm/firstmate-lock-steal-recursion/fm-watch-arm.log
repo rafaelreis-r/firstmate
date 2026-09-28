@@ -1,0 +1,35 @@
+ok - watch-arm: an attached arm reports the wake its cycle delivered instead of a false failure
+ok - watch-arm: a delivered wake consumed by the handling turn still closes the attached arm cleanly
+ok - watch-arm: an unusable launch confirm window refuses to arm by name
+ok - watch-arm: a signaled cycle names its signal and the arm keeps that reason on disk
+watcher: FAILED - signal SIGTERM
+ok - watch-arm: a cycle that delivered no wake of its own still fails loudly
+/Users/rafaelreisr/.no-mistakes/worktrees/320ff1b3bd13/01M3JMG5B3ZZ32RQDE4ACPTE0Y/bin/fm-watch-arm.sh: line 648:  5973 Killed: 9                  "$WATCH" > "$child_out" 2> "$child_err"
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 2 --recovery-generation 6577.1790554501.fjyR3t
+watcher: FAILED - signal SIGTERM
+watcher: FAILED - signal SIGTERM
+watcher: FAILED - signal SIGTERM
+ok - watch-arm: re-arm surfaces every queued wake and an open remote decision after downtime
+watcher: FAILED - signal SIGTERM
+watcher: recovery state could not be persisted; retaining stale lock evidence
+ok - watch-arm: marker publication failure retains stale-lock recovery evidence
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 1 --recovery-generation 16640.1790554512.z5isw2
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 2 --recovery-generation 20287.1790554515.2H6I1L
+watcher: FAILED - signal SIGTERM
+ok - watch-arm: a wake queued after handling drain is recovered once at successor arm
+watcher: FAILED - signal SIGTERM
+ok - watch-arm: interrupted handling leaves its wake durable for successor re-drain
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 0 --recovery-generation 30357.1790554527.NSdh2l
+watcher: FAILED - signal SIGTERM
+ok - watch-arm: malformed recovery state is quarantined without a successor loop
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 1 --recovery-generation 35340.1790554530.GMzhro
+ok - watch-arm: publication after recovery handoff is surfaced
+ok - watch-arm: restart publishes recovery before clearing a reused-pid watcher lock
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 7 --recovery-generation 38006.1790554534.enkNPc
+ok - watch-arm: markerless legacy queues are adopted and recovered
+ok - watch-arm: a watcher close during handling keeps the printed acknowledgement valid
+ok - watch-arm: a moved recovery generation consumes handled rows and names its remedy
+watcher: FAILED - signal SIGTERM
+ok - watch-arm: downtime marker publication does not follow symlinks
+
+exit_status=0
