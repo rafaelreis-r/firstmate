@@ -252,7 +252,7 @@ if [ "$CMD" = model-fallback ]; then
   . "$SCRIPT_DIR/fm-backlog-transition-lib.sh"
   META="$STATE/$ID.meta"
   META_LOCK=$(fm_meta_lock_path "$META") || exit 1
-  fm_lock_acquire_wait "$META_LOCK"
+  fm_lock_acquire_wait "$META_LOCK" || exit 1
   if ! fm_backlog_record_present "$META" "task record" "$STATE"; then
     fm_lock_release "$META_LOCK"
     echo "error: $FM_BACKLOG_TRANSITION_ERROR" >&2

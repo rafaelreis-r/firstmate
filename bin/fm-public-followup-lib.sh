@@ -343,7 +343,7 @@ fm_pf_registry_lock_acquire() {
     # shellcheck source=bin/fm-wake-lib.sh
     . "$_FM_PF_LIB_DIR/fm-wake-lib.sh"
   fi
-  fm_lock_acquire_wait "$(fm_pf_registry_lock_path "$state" "$id")"
+  fm_lock_acquire_wait "$(fm_pf_registry_lock_path "$state" "$id")" || return 1
 }
 
 fm_pf_registry_lock_release() {

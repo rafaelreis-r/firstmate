@@ -132,6 +132,7 @@ fm_task_inbox_lock_acquire() {  # <lock-path>
   fi
   deadline=$(( $(date +%s) + wait ))
   while ! fm_lock_try_acquire "$lock"; do
+    [ -d "$(dirname "$lock")" ] || return 1
     [ "$(date +%s)" -lt "$deadline" ] || return 1
     sleep 0.1
   done

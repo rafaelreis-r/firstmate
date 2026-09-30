@@ -262,12 +262,21 @@ test_lock_single_winner_under_concurrency() {
   while [ "$i" -le 40 ]; do
     FM_STATE_OVERRIDE="$state" bash -c '
       . "$1"
-      if fm_lock_try_acquire "$2"; then
-        printf "%s\n" "$$" >> "$3"
-        # Stay alive so the held lock names a live pid for the whole window;
-        # otherwise a late contender could legitimately reclaim a dead-pid lock.
-        sleep 1
-      fi
+      attempts=0
+      while [ "$attempts" -lt 100 ] && [ ! -s "$3" ]; do
+        if fm_lock_try_acquire "$2"; then
+          if [ ! -s "$3" ]; then
+            printf "%s\n" "$$" >> "$3"
+            # Keep the owner live while other contenders observe its lock.
+            sleep 1
+          else
+            fm_lock_release "$2"
+          fi
+          break
+        fi
+        sleep 0.02
+        attempts=$((attempts + 1))
+      done
     ' _ "$LIB" "$lockdir" "$marker" &
     pids="$pids $!"
     i=$((i + 1))
@@ -314,10 +323,20 @@ test_lock_stale_steal_single_winner_under_concurrency() {
   while [ "$i" -le 40 ]; do
     FM_STATE_OVERRIDE="$state" bash -c '
       . "$1"
-      if fm_lock_try_acquire "$2"; then
-        printf "%s\n" "${BASHPID:-$$}" >> "$3"
-        sleep 1
-      fi
+      attempts=0
+      while [ "$attempts" -lt 100 ] && [ ! -s "$3" ]; do
+        if fm_lock_try_acquire "$2"; then
+          if [ ! -s "$3" ]; then
+            printf "%s\n" "${BASHPID:-$$}" >> "$3"
+            sleep 1
+          else
+            fm_lock_release "$2"
+          fi
+          break
+        fi
+        sleep 0.02
+        attempts=$((attempts + 1))
+      done
     ' _ "$LIB" "$lockdir" "$marker" &
     pids="$pids $!"
     i=$((i + 1))
@@ -1162,6 +1181,55 @@ test_msys_pid_identity_uses_proc() {
   pass "MSYS process identity uses compatible /proc fields"
 }
 
+# A lock whose parent directory is already gone must fail immediately. Recursing
+# into "$lockdir.steal" has no base case and filled a disk; a regression hangs
+# this case instead of returning, so the wait is killed on a short bound.
+test_lock_missing_parent_returns_without_steal() {
+  local dir missing lockdir name pid i out err rc steal
+  dir=$(make_case lock-missing-parent)
+  missing="$dir/does-not-exist"
+  run_bounded() {  # <name> <lockdir>
+    name=$1
+    lockdir=$2
+    out="$dir/$name.out"
+    err="$dir/$name.err"
+    FM_STATE_OVERRIDE="$dir/state" bash -c '
+      . "$1"
+      if [ "$3" = wait ]; then
+        fm_lock_acquire_wait "$2"
+      else
+        fm_lock_try_acquire "$2"
+      fi
+      echo "rc=$?"
+    ' _ "$LIB" "$lockdir" "$name" >"$out" 2>"$err" &
+    pid=$!
+    i=0
+    while [ "$i" -lt 30 ]; do
+      kill -0 "$pid" 2>/dev/null || break
+      sleep 0.1
+      i=$((i + 1))
+    done
+    if kill -0 "$pid" 2>/dev/null; then
+      kill -KILL "$pid" 2>/dev/null || true
+      wait "$pid" 2>/dev/null || true
+      fail "$name did not return when the parent directory is gone: $(cat "$err" 2>/dev/null || true)"
+    fi
+    wait "$pid" 2>/dev/null || true
+    rc=$(sed -n 's/^rc=//p' "$out" | tail -1)
+    [ "$rc" = 1 ] || fail "$name returned rc=${rc:-missing}, expected 1: $(cat "$out" 2>/dev/null || true) $(cat "$err" 2>/dev/null || true)"
+    if grep -q '\.steal\.steal' "$err" 2>/dev/null; then
+      fail "$name recursed into steal entries: $(tail -5 "$err")"
+    fi
+  }
+  run_bounded try "$missing/.contend.lock"
+  run_bounded wait "$missing/.wait.lock"
+  [ ! -e "$missing" ] || fail "missing parent directory was created"
+  steal=$(find "$dir" -name '*.steal*' -print)
+  [ -z "$steal" ] || fail "lock acquire created steal entries: $steal"
+  pass "lock acquire on a missing parent returns without creating steal entries"
+}
+
+
 test_wait_deadline_reaps_a_stopped_child
 test_singleton_start
 test_pid_identity_is_locale_invariant
@@ -1179,6 +1247,7 @@ test_lock_does_not_steal_live_lock
 test_lock_empty_pid_uses_minimum_grace
 test_lock_late_claim_loses_after_recreate
 test_lock_paused_mid_acquire_claim_fails_during_steal
+test_lock_missing_parent_returns_without_steal
 test_watch_restart_rejects_reused_pid
 test_watch_restart_attaches_to_healthy_peer
 test_watcher_self_evicts_on_lock_takeover

@@ -163,6 +163,7 @@ cycle_log_append() {
 
   i=0
   while ! fm_lock_try_acquire "$CYCLE_LOG_LOCK"; do
+    [ -d "$(dirname "$CYCLE_LOG_LOCK")" ] || return 0
     [ "$i" -lt 20 ] || return 0
     sleep 0.02
     i=$((i + 1))
@@ -212,6 +213,7 @@ cycle_mark_predecessor_successor() {
   [ -f "$CYCLE_LOG" ] || return 0
   i=0
   while ! fm_lock_try_acquire "$CYCLE_LOG_LOCK"; do
+    [ -d "$(dirname "$CYCLE_LOG_LOCK")" ] || return 0
     [ "$i" -lt 20 ] || return 0
     sleep 0.02
     i=$((i + 1))
@@ -297,6 +299,10 @@ close_unobserved_cycle() {
   clean_identity=$(printf '%s' "$cycle_watcher_identity" | tr '\t\r\n' '   ')
   i=0
   while ! fm_lock_try_acquire "$WATCH_DELIVERY_LOCK"; do
+    [ -d "$(dirname "$WATCH_DELIVERY_LOCK")" ] || {
+      fail_unexplained_cycle
+      return 1
+    }
     [ "$i" -lt 20 ] || {
       fail_unexplained_cycle
       return 1
@@ -403,7 +409,7 @@ child_stderr_flush() {
     # stalling the cycle - the reason is already on the adapter's stream.
     cat "$child_err" >&2 || true
     while ! fm_lock_try_acquire "$ARM_STDERR_LOCK"; do
-      if [ "$i" -ge 20 ]; then
+      if [ ! -d "$(dirname "$ARM_STDERR_LOCK")" ] || [ "$i" -ge 20 ]; then
         rm -f "$child_err" 2>/dev/null || true
         child_err=
         return 0

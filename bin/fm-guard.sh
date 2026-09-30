@@ -112,6 +112,9 @@ fm_guard_claim_stale_banner() {
       fm_lock_release "$lock" 2>/dev/null || true
       return 0
     fi
+    if [ ! -d "$(dirname "$lock")" ]; then
+      return 0
+    fi
     seen=$(cat "$marker" 2>/dev/null || true)
     seen=${seen%$'\n'}
     if [ "$seen" = "$key" ]; then
