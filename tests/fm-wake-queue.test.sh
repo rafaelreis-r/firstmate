@@ -826,6 +826,21 @@ wait_for_file_text() {  # <file> <fixed-text>
   return 1
 }
 
+# slow_first_perl: a `perl` PATH shim whose first call sleeps, then execs the
+# real perl. The drain's first perl call is the unread-status read that follows
+# the raw-row commit, so the sleep opens the same slow-annotation window.
+slow_first_perl() {  # <bindir> <seconds>
+  local bindir=$1 seconds=$2 real_perl
+  real_perl=$(command -v perl) || fail "perl is required"
+  mkdir -p "$bindir"
+  cat > "$bindir/perl" <<SH
+#!/usr/bin/env bash
+[ -e "$bindir/.fired" ] || { : > "$bindir/.fired"; sleep $seconds; }
+exec "$real_perl" "\$@"
+SH
+  chmod +x "$bindir/perl"
+}
+
 test_slow_annotation_does_not_block_append_and_deleted_file_fails_open() {
   local dir state out1 out2 pid
   dir=$(make_case slow-annotation)
@@ -835,7 +850,8 @@ test_slow_annotation_does_not_block_append_and_deleted_file_fails_open() {
   printf 'done: disappears before bounded read\n' > "$state/slow.status"
   append_wake "$state" signal slow.status "signal: slow" || fail "slow status wake append failed"
 
-  FM_STATE_OVERRIDE="$state" FM_WAKE_ENRICH_TEST_DELAY=3 "$DRAIN" > "$out1" &
+  slow_first_perl "$dir/slowbin" 3
+  PATH="$dir/slowbin:$PATH" FM_STATE_OVERRIDE="$state" "$DRAIN" > "$out1" &
   pid=$!
   wait_for_file_text "$out1" "$(printf '\tsignal\tslow.status\t')" \
     || { kill "$pid" 2>/dev/null || true; fail "slow drain did not commit its raw row"; }
@@ -1544,7 +1560,8 @@ test_interruption_before_and_after_raw_commit() {
     || fail "pre-commit replay acknowledgement failed"
 
   append_wake "$state" signal task.status "signal: task after commit" || fail "post-commit interruption wake append failed"
-  FM_STATE_OVERRIDE="$state" FM_WAKE_ENRICH_TEST_DELAY=5 "$DRAIN" > "$after_out" &
+  slow_first_perl "$dir/slowbin" 5
+  PATH="$dir/slowbin:$PATH" FM_STATE_OVERRIDE="$state" "$DRAIN" > "$after_out" &
   pid=$!
   wait_for_file_text "$after_out" "$(printf '\tsignal\ttask.status\t')" \
     || { kill "$pid" 2>/dev/null || true; fail "post-commit drain did not print its raw row"; }

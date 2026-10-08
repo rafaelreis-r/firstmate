@@ -2313,14 +2313,6 @@ fm_wake_print_annotations() {  # <deduped-raw-rows> [<presentation-snapshot>]
     }
   ') || return 0
 
-  # Test-only latency seam for proving that queue appends remain independent of
-  # a slow best-effort annotation phase.
-  case "${FM_WAKE_ENRICH_TEST_DELAY:-0}" in
-    0) ;;
-    ''|*[!0-9]*) ;;
-    *) sleep "$FM_WAKE_ENRICH_TEST_DELAY" ;;
-  esac
-
   while IFS=$(printf '\t') read -r status_key mode; do
     [ -n "$status_key" ] || continue
     path="$STATE/$status_key"
