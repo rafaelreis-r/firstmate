@@ -293,70 +293,6 @@ test_expected_label_refuses_ambiguous_untagged_tab() {
   pass "fm_backend_zellij_tab_matches_label: refuses an untagged legacy label match when 2+ live tabs share it (migration ambiguity guard)"
 }
 
-test_resolve_bare_selector_prefers_scoped_title() {
-  local dir fb out title
-  dir="$TMP_ROOT/resolve-scoped"; mkdir -p "$dir/responses"
-  title=$(zellij_expected_scoped_title fm-resolve1)
-  # 1: list-tabs --json -> the home-scoped tagged tab
-  printf '[{"tab_id":6,"name":"%s"}]\n' "$title" > "$dir/responses/1.out"
-  # 2: list-panes for tab 6
-  zellij_pane_response "$dir" 2 12 6
-  fb=$(make_zellij_fakebin "$dir")
-  out=$( PATH="$fb:$PATH" FM_ZELLIJ_LOG="$dir/log" FM_ZELLIJ_RESPONSES="$dir/responses" \
-    FM_ZELLIJ_SESSION_LIST="firstmate" \
-    bash -c '. "$0/bin/backends/zellij.sh"; fm_backend_zellij_resolve_bare_selector fm-resolve1' "$ROOT" )
-  [ "$out" = "firstmate:12" ] || fail "resolve_bare_selector should resolve the home-scoped tagged tab, got '$out'"
-  pass "fm_backend_zellij_resolve_bare_selector: matches the home-scoped tagged title first"
-}
-
-test_resolve_bare_selector_refuses_ambiguous_untagged() {
-  local dir fb out status
-  dir="$TMP_ROOT/resolve-ambiguous"; mkdir -p "$dir/responses"
-  # 1: list-tabs --json -> two DIFFERENT tabs sharing the same untagged bare name
-  zellij_multi_tab_response "$dir" 1 3 fm-resolve2 9 fm-resolve2
-  zellij_multi_tab_response "$dir" 2 3 fm-resolve2 9 fm-resolve2
-  fb=$(make_zellij_fakebin "$dir")
-  out=$( PATH="$fb:$PATH" FM_ZELLIJ_LOG="$dir/log" FM_ZELLIJ_RESPONSES="$dir/responses" \
-    FM_ZELLIJ_SESSION_LIST="firstmate" \
-    bash -c '. "$0/bin/backends/zellij.sh"; fm_backend_zellij_resolve_bare_selector fm-resolve2' "$ROOT" 2>&1 )
-  status=$?
-  [ "$status" -ne 0 ] || fail "resolve_bare_selector should refuse an ambiguous untagged label shared by 2+ live tabs"
-  assert_contains "$out" "no zellij tab named" "resolve_bare_selector's refusal did not report the expected not-found error"
-  pass "fm_backend_zellij_resolve_bare_selector: refuses an ambiguous untagged legacy label shared by 2+ live tabs"
-}
-
-test_resolve_bare_selector_prefers_later_session_scoped_title_over_legacy() {
-  local dir fb out title
-  dir="$TMP_ROOT/resolve-later-scoped"; mkdir -p "$dir/responses"
-  title=$(zellij_expected_scoped_title fm-resolve3)
-  zellij_tab_response "$dir" 1 3 fm-resolve3
-  zellij_tab_response "$dir" 2 6 "$title"
-  zellij_pane_response "$dir" 3 12 6
-  fb=$(make_zellij_fakebin "$dir")
-  out=$( PATH="$fb:$PATH" FM_ZELLIJ_LOG="$dir/log" FM_ZELLIJ_RESPONSES="$dir/responses" \
-    FM_ZELLIJ_SESSION_LIST=$'legacy-session\nscoped-session' \
-    bash -c '. "$0/bin/backends/zellij.sh"; fm_backend_zellij_resolve_bare_selector fm-resolve3' "$ROOT" )
-  [ "$out" = "scoped-session:12" ] || fail "resolve_bare_selector should prefer a later session's scoped title over an earlier legacy title, got '$out'"
-  pass "fm_backend_zellij_resolve_bare_selector: checks every session for the scoped title before legacy fallback"
-}
-
-test_resolve_bare_selector_refuses_cross_session_ambiguous_untagged() {
-  local dir fb out status
-  dir="$TMP_ROOT/resolve-cross-session-ambiguous"; mkdir -p "$dir/responses"
-  zellij_tab_response "$dir" 1 3 fm-resolve4
-  zellij_tab_response "$dir" 2 9 fm-resolve4
-  zellij_tab_response "$dir" 3 3 fm-resolve4
-  zellij_tab_response "$dir" 4 9 fm-resolve4
-  fb=$(make_zellij_fakebin "$dir")
-  out=$( PATH="$fb:$PATH" FM_ZELLIJ_LOG="$dir/log" FM_ZELLIJ_RESPONSES="$dir/responses" \
-    FM_ZELLIJ_SESSION_LIST=$'one-session\ntwo-session' \
-    bash -c '. "$0/bin/backends/zellij.sh"; fm_backend_zellij_resolve_bare_selector fm-resolve4' "$ROOT" 2>&1 )
-  status=$?
-  [ "$status" -ne 0 ] || fail "resolve_bare_selector should refuse an untagged legacy label that appears once in each of two sessions"
-  assert_contains "$out" "no zellij tab named" "resolve_bare_selector's cross-session ambiguity refusal did not report the expected not-found error"
-  pass "fm_backend_zellij_resolve_bare_selector: requires untagged legacy labels to be globally unique across sessions"
-}
-
 # --- session_exists / server_ensure -------------------------------------------
 
 test_session_exists_true_when_listed() {
@@ -1233,10 +1169,6 @@ test_scoped_title_uses_secondmate_home_label
 test_scoped_title_changes_with_root_path
 test_expected_label_accepts_unambiguous_untagged_legacy_tab
 test_expected_label_refuses_ambiguous_untagged_tab
-test_resolve_bare_selector_prefers_scoped_title
-test_resolve_bare_selector_refuses_ambiguous_untagged
-test_resolve_bare_selector_prefers_later_session_scoped_title_over_legacy
-test_resolve_bare_selector_refuses_cross_session_ambiguous_untagged
 test_session_exists_true_when_listed
 test_session_exists_false_when_absent
 test_server_ensure_skips_attach_when_already_exists

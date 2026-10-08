@@ -808,10 +808,6 @@ _fm_open_decisions_file_ident() {  # <file> -> strongest available identity
 
 _fm_status_file_size() {  # <status-file>
   local f=$1
-  if [ -n "${FM_STATUS_SIZE_READER:-}" ]; then
-    "$FM_STATUS_SIZE_READER" "$f"
-    return
-  fi
   if [ "$(uname -s 2>/dev/null)" = Darwin ]; then
     LC_ALL=C /usr/bin/stat -f '%z' "$f" 2>/dev/null
   else

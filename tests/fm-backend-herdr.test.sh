@@ -305,9 +305,6 @@ test_workspace_label_secondmate_marker_wins_over_config_override() {
   pass "fm_backend_herdr_workspace_label: the secondmate marker wins over a config/herdr-workspace-label override"
 }
 
-# --- fm_backend_herdr_cli: session targeting (2026-07-02 incident fix) -------
-
-
 # --- client selection: a stale client shadowing a compatible one -------------
 #
 # Two herdr clients on PATH is a real host shape (a self-updated ~/.local/bin
@@ -878,12 +875,6 @@ test_launcher_identity_refuses_a_workspace_missing_from_the_session() {
   pass "fm_backend_herdr_launcher_identity: refuses when the launcher's workspace is gone from its own session"
 }
 
-# --- workspace_ensure placement ---------------------------------------------
-
-
-
-
-
 # --- container_ensure / create_task ------------------------------------------
 
 
@@ -1093,11 +1084,6 @@ test_create_task_creates_and_parses_ids() {
     "create_task must never prune when called with no seeded default tab id (the 4th arg defaults to empty)"
   pass "fm_backend_herdr_create_task: creates a tab and parses tab_id/pane_id from the JSON response, prunes nothing when no seeded tab id is given"
 }
-
-# --- container_ensure / create_task: --no-focus and per-home label ----------
-
-
-
 
 # --- default-on disposable presentation projection --------------------------
 
