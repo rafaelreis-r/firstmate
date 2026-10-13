@@ -4157,6 +4157,135 @@ EOF
   pass "the run abort and the leaked-process reap both complete before the destructive worktree return"
 }
 
+# A successful local-only teardown, the smallest path that reaches the
+# post-success bridge report.
+seed_cdaxi_success_case() {  # <name>
+  local case_dir
+  case_dir=$(make_case "$1")
+  write_meta "$case_dir" local-only ship
+  wt_commit "$case_dir" "landed"
+  add_fork_with_pushed_branch "$case_dir"
+  printf '%s\n' "$case_dir"
+}
+
+# pgrep/lsof/ps stand-ins. An empty pid means pgrep reports no bridge.
+# Other invocations delegate so the rest of teardown still sees real tools.
+install_cdaxi_probe_fakes() {  # <case-dir> <pid> <lsof-cwd> <ps-text>
+  local case_dir=$1 pid=$2 cwd=$3 ps_text=$4
+  local real_pgrep real_lsof real_ps
+  real_pgrep=$(command -v pgrep)
+  real_lsof=$REAL_LSOF_FOR_TEST
+  real_ps=$REAL_PS_FOR_TEST
+  cat > "$case_dir/fakebin/pgrep" <<EOF
+#!/usr/bin/env bash
+if [ "\${1:-}" = -f ] && [ "\${2:-}" = chrome-devtools-axi-bridge ]; then
+  if [ -n '$pid' ]; then
+    printf '%s\\n' '$pid'
+    exit 0
+  fi
+  exit 1
+fi
+exec '$real_pgrep' "\$@"
+EOF
+  cat > "$case_dir/fakebin/lsof" <<EOF
+#!/usr/bin/env bash
+if [ "\${1:-}" = -a ] && [ "\${2:-}" = -p ] && [ "\${3:-}" = '$pid' ] \\
+   && [ "\${4:-}" = -d ] && [ "\${5:-}" = cwd ] && [ "\${6:-}" = -Fn ]; then
+  printf 'p%s\\nfcwd\\nn%s\\n' '$pid' '$cwd'
+  exit 0
+fi
+exec '$real_lsof' "\$@"
+EOF
+  cat > "$case_dir/fakebin/ps" <<EOF
+#!/usr/bin/env bash
+if [ "\${1:-}" = eww ] && [ "\${2:-}" = -p ] && [ "\${3:-}" = '$pid' ]; then
+  printf '%s\\n' '$ps_text'
+  exit 0
+fi
+exec '$real_ps' "\$@"
+EOF
+  cat > "$case_dir/fakebin/chrome-devtools-axi" <<EOF
+#!/usr/bin/env bash
+printf '%s\\n' "\$*" >> '$case_dir/cdaxi-invoked'
+exit 0
+EOF
+  chmod +x "$case_dir/fakebin/pgrep" "$case_dir/fakebin/lsof" \
+    "$case_dir/fakebin/ps" "$case_dir/fakebin/chrome-devtools-axi"
+}
+
+test_chrome_devtools_bridge_warning_names_an_attributed_bridge_and_still_succeeds() {
+  local case_dir rc pid
+  case_dir=$(seed_cdaxi_success_case cdaxi-attributed)
+  sleep 60 &
+  pid=$!
+  disown
+  install_cdaxi_probe_fakes "$case_dir" "$pid" "$case_dir/wt" \
+    "CHROME_DEVTOOLS_AXI_SESSION=eval-1 node chrome-devtools-axi-bridge.js"
+
+  rc=0
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+  if ! kill -0 "$pid" 2>/dev/null; then
+    fail "attributed bridge warning: teardown signaled the stand-in bridge process $pid"
+  fi
+  kill -KILL "$pid" 2>/dev/null || true
+
+  expect_code 0 "$rc" "attributed bridge warning: teardown should succeed"
+  assert_grep "teardown task-x1 complete" "$case_dir/stdout" \
+    "attributed bridge warning: teardown did not report success"
+  assert_grep "chrome-devtools-axi bridge pid $pid session eval-1" "$case_dir/stderr" \
+    "attributed bridge warning: teardown did not name the bridge"
+  assert_grep "CHROME_DEVTOOLS_AXI_SESSION=eval-1 chrome-devtools-axi stop" "$case_dir/stderr" \
+    "attributed bridge warning: teardown did not print the stop command"
+  assert_absent "$case_dir/cdaxi-invoked" \
+    "attributed bridge warning: teardown ran chrome-devtools-axi instead of only reporting it"
+  pass "an attributed chrome-devtools-axi bridge is named with its stop command and teardown still succeeds"
+}
+
+test_chrome_devtools_bridge_warning_counts_an_unattributed_bridge_and_still_succeeds() {
+  local case_dir rc pid
+  case_dir=$(seed_cdaxi_success_case cdaxi-unattributed)
+  sleep 60 &
+  pid=$!
+  disown
+  install_cdaxi_probe_fakes "$case_dir" "$pid" "/tmp" \
+    "node chrome-devtools-axi-bridge.js"
+
+  rc=0
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+  if ! kill -0 "$pid" 2>/dev/null; then
+    fail "unattributed bridge warning: teardown signaled the stand-in bridge process $pid"
+  fi
+  kill -KILL "$pid" 2>/dev/null || true
+
+  expect_code 0 "$rc" "unattributed bridge warning: teardown should succeed"
+  assert_grep "chrome-devtools-axi bridge processes still running after teardown of task-x1 (1): pids $pid" \
+    "$case_dir/stderr" \
+    "unattributed bridge warning: teardown did not report the count and pid"
+  assert_no_grep "chrome-devtools-axi stop" "$case_dir/stderr" \
+    "unattributed bridge warning: teardown printed a stop command for a bridge it could not attribute"
+  assert_absent "$case_dir/cdaxi-invoked" \
+    "unattributed bridge warning: teardown ran chrome-devtools-axi"
+  pass "an unattributed chrome-devtools-axi bridge is reported by count and pid, and teardown still succeeds"
+}
+
+test_chrome_devtools_bridge_warning_is_absent_when_none_are_running() {
+  local case_dir rc
+  case_dir=$(seed_cdaxi_success_case cdaxi-none)
+  install_cdaxi_probe_fakes "$case_dir" "" "" ""
+
+  rc=0
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+
+  expect_code 0 "$rc" "no bridge warning: teardown should succeed"
+  assert_grep "teardown task-x1 complete" "$case_dir/stdout" \
+    "no bridge warning: teardown did not report success"
+  assert_no_grep "chrome-devtools-axi bridge" "$case_dir/stderr" \
+    "no bridge warning: teardown warned when pgrep found nothing"
+  assert_absent "$case_dir/cdaxi-invoked" \
+    "no bridge warning: teardown ran chrome-devtools-axi"
+  pass "teardown stays quiet and succeeds when no chrome-devtools-axi bridge is running"
+}
+
 test_local_only_fork_remote_allows
 test_teardown_closes_the_backlog_item_itself
 test_teardown_manual_backend_leaves_the_backlog_to_the_operator
@@ -4251,3 +4380,6 @@ test_process_spawned_during_grace_is_reaped_on_later_pass
 test_persistent_scan_refuses_after_bounded_retries
 test_process_exit_during_identity_lookup_does_not_refuse
 test_run_abort_precedes_process_reap_precedes_worktree_removal
+test_chrome_devtools_bridge_warning_names_an_attributed_bridge_and_still_succeeds
+test_chrome_devtools_bridge_warning_counts_an_unattributed_bridge_and_still_succeeds
+test_chrome_devtools_bridge_warning_is_absent_when_none_are_running
