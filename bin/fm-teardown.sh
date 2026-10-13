@@ -262,6 +262,13 @@
 #     root still exists, so the account's healthy LaunchAgent worker and every
 #     live remote secondmate worker are out of scope. Best effort: a sweep
 #     failure never blocks this teardown.
+# After a completed teardown, leftover chrome-devtools-axi bridges are reported
+# and never signaled. `pgrep -f chrome-devtools-axi-bridge` lists them. A bridge
+# is named with the exact stop command only when lsof shows its cwd inside this
+# task's recorded worktree, or its session name is this task id; the session
+# name comes from ps environment text or the tool's own bridge.pid file.
+# Anything else is a count and PIDs, because other live workers and other homes
+# may own those bridges. The check never refuses teardown.
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -974,6 +981,10 @@ fm_backend_validate_task_endpoint "$META" "$ID" || exit 1
 BACKEND=$FM_BACKEND_VALIDATED_BACKEND
 T=$FM_BACKEND_VALIDATED_TARGET
 WT=$(fm_meta_get "$META" worktree)
+TEARDOWN_WT_PHYSICAL=
+if [ -n "$WT" ] && [ -d "$WT" ]; then
+  TEARDOWN_WT_PHYSICAL=$(cd "$WT" && pwd -P) || TEARDOWN_WT_PHYSICAL=
+fi
 PROJ=$(fm_meta_get "$META" project)
 T_ORCA=
 [ "$BACKEND" != orca ] || T_ORCA=$T
@@ -1917,6 +1928,161 @@ pids_with_cwd_under() {  # <dir>
   done <<EOF
 $out
 EOF
+}
+
+# Session names chrome-devtools-axi will accept in a stop command. Rejects
+# anything that could not be copied into CHROME_DEVTOOLS_AXI_SESSION= verbatim.
+cdaxi_session_ok() {  # <name>
+  local name=$1
+  [ -n "$name" ] || return 1
+  [ "${#name}" -le 64 ] || return 1
+  case "$name" in
+    *[!A-Za-z0-9._-]*) return 1 ;;
+  esac
+  case "$name" in
+    *[!.,]*) return 0 ;;
+  esac
+  return 1
+}
+
+cdaxi_session_token() {  # <text>
+  local text=$1 rest token="" i=0 char
+  case "$text" in
+    *CHROME_DEVTOOLS_AXI_SESSION=*) ;;
+    *) return 0 ;;
+  esac
+  rest=${text#*CHROME_DEVTOOLS_AXI_SESSION=}
+  while [ "$i" -lt 64 ]; do
+    char=${rest:$i:1}
+    [ -n "$char" ] || break
+    case "$char" in
+      [A-Za-z0-9._-]) token=$token$char ;;
+      *) break ;;
+    esac
+    i=$((i + 1))
+  done
+  cdaxi_session_ok "$token" || return 0
+  printf '%s\n' "$token"
+}
+
+cdaxi_pidfile_matches() {  # <file> <pid>
+  local file=$1 pid=$2 got
+  [ -f "$file" ] && [ ! -L "$file" ] || return 1
+  IFS= read -r got < "$file" || return 1
+  got=${got//[[:space:]]/}
+  [ -n "$got" ] && [ "$got" = "$pid" ]
+}
+
+# The tool writes one bridge.pid per session. ps does not show the environment
+# on macOS, so this file is how a named session is recovered for the stop command.
+cdaxi_pidfile_session() {  # <pid>
+  local pid=$1 home base file name
+  home=${HOME:-}
+  [ -n "$home" ] || return 0
+  base="$home/.chrome-devtools-axi"
+  if cdaxi_pidfile_matches "$base/bridge.pid" "$pid"; then
+    printf 'default\n'
+    return 0
+  fi
+  [ -d "$base/sessions" ] || return 0
+  for file in "$base/sessions"/*/bridge.pid; do
+    [ -e "$file" ] || continue
+    name=$(basename "$(dirname "$file")")
+    cdaxi_session_ok "$name" || continue
+    if cdaxi_pidfile_matches "$file" "$pid"; then
+      printf '%s\n' "$name"
+      return 0
+    fi
+  done
+  return 0
+}
+
+cdaxi_bridge_cwd() {  # <pid>
+  local pid=$1 out line path=""
+  command -v lsof >/dev/null 2>&1 || return 0
+  out=$(lsof -a -p "$pid" -d cwd -Fn 2>/dev/null || true)
+  while IFS= read -r line; do
+    case "$line" in
+      n*) path=${line#n} ;;
+    esac
+  done <<EOF
+$out
+EOF
+  case "$path" in
+    *" (deleted)") path=${path% (deleted)} ;;
+  esac
+  printf '%s\n' "$path"
+}
+
+cdaxi_bridge_attributed() {  # <cwd> <session>
+  local cwd=$1 session=$2 root
+  if [ -n "$session" ] && [ "$session" != default ] && [ "$session" = "$ID" ]; then
+    return 0
+  fi
+  teardown_owns_worktree || return 1
+  for root in "$WT" "${TEARDOWN_WT_PHYSICAL:-}"; do
+    [ -n "$root" ] || continue
+    case "$cwd" in
+      "$root"|"$root"/*) return 0 ;;
+    esac
+  done
+  return 1
+}
+
+warn_one_attributed_bridge() {  # <pid> <session> <cwd>
+  local pid=$1 session=$2 cwd=$3 where=""
+  if [ -n "$cwd" ]; then
+    where=" (cwd $cwd)"
+  fi
+  if [ -n "$session" ]; then
+    echo "warning: chrome-devtools-axi bridge pid $pid session $session still running for torn-down task $ID$where; stop it with: CHROME_DEVTOOLS_AXI_SESSION=$session chrome-devtools-axi stop" >&2
+  else
+    echo "warning: chrome-devtools-axi bridge pid $pid still running for torn-down task $ID$where; session name unread, so it was not stopped" >&2
+  fi
+}
+
+warn_unattributed_bridges() {  # <space-separated pids>
+  local ids=$1 count
+  [ -n "$ids" ] || return 0
+  count=$(printf '%s\n' "$ids" | wc -w | tr -d '[:space:]')
+  echo "warning: chrome-devtools-axi bridge processes still running after teardown of $ID ($count): pids $ids; these may belong to other live workers, so none were stopped" >&2
+}
+
+# Best-effort report. A missing tool, a pgrep miss, or a failed lsof read is
+# silence, never a teardown failure, and this function never signals a process.
+warn_chrome_devtools_bridges() {
+  local pids pid ps_text session cwd inspected=0 unattributed=""
+  command -v pgrep >/dev/null 2>&1 || return 0
+  pids=$(pgrep -f chrome-devtools-axi-bridge 2>/dev/null || true)
+  [ -n "$pids" ] || return 0
+  while IFS= read -r pid; do
+    case "$pid" in
+      ''|*[!0-9]*|0|1|"$$") continue ;;
+    esac
+    if [ "$inspected" -ge 64 ]; then
+      unattributed="${unattributed:+$unattributed }$pid"
+      continue
+    fi
+    inspected=$((inspected + 1))
+    ps_text=$(ps eww -p "$pid" 2>/dev/null || true)
+    case "$ps_text" in
+      *pgrep*-f*chrome-devtools-axi-bridge*) continue ;;
+    esac
+    session=$(cdaxi_session_token "$ps_text")
+    if [ -z "$session" ]; then
+      session=$(cdaxi_pidfile_session "$pid" || true)
+    fi
+    cwd=$(cdaxi_bridge_cwd "$pid")
+    if cdaxi_bridge_attributed "$cwd" "$session"; then
+      warn_one_attributed_bridge "$pid" "$session" "$cwd"
+    else
+      unattributed="${unattributed:+$unattributed }$pid"
+    fi
+  done <<EOF
+$pids
+EOF
+  warn_unattributed_bridges "$unattributed"
+  return 0
 }
 
 task_process_identity() {  # <pid>
@@ -3703,4 +3869,5 @@ elif teardown_owns_worktree; then
 else
   echo "teardown $ID complete (window $T; pool slot $WT left to task $TEARDOWN_SLOT_REASSIGNED_TO${TEARDOWN_SLOT_REASSIGNED_HOME:+ (home $TEARDOWN_SLOT_REASSIGNED_HOME)}, which it was reassigned to)"
 fi
+warn_chrome_devtools_bridges || true
 backlog_refresh_reminder
